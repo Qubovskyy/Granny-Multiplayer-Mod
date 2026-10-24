@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Granny Co-op – Model Tool: converts a character FBX (+ its animations) into the mod's .gmdl file, without Unity.
+    Build (from this folder):  dotnet publish -c Release
+    The exe lands in  publish\GrannyModelTool.exe  (needs the .NET 8 Desktop Runtime).
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>GrannyModelTool</AssemblyName>
+    <RootNamespace>GrannyModelTool</RootNamespace>
+    <Version>1.1.0</Version>
+    <Product>Granny Co-op Model Tool</Product>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>false</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PublishDir>publish\</PublishDir>
+    <DebugType>embedded</DebugType>
+    <RollForward>Major</RollForward>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- the built-in animations (Mixamo Idle / Walking / Crouching Idle), used for every animation not chosen -->
+    <EmbeddedResource Include="DefaultAnims\*.fbx" LogicalName="anim.%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

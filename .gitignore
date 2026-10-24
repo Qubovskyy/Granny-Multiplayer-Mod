@@ -1,0 +1,26 @@
+# build output
+bin/
+obj/
+publish/
+*.user
+*.suo
+.vs/
+.idea/
+
+# your own game folder setting
+GrannyMP.local.props
+
+# game files / generated interop – never commit
+BepInEx/
+*.dll
+*.pdb
+
+# third-party assets (not ours to redistribute) – see README
+tools/ModelTool/DefaultAnims/*.fbx
+models/
+*.gmdl
+*.fbx
+
+# logs
+LogOutput*.log
+*.log

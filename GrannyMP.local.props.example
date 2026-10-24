@@ -1,0 +1,6 @@
+<Project>
+  <!-- Copy this file to GrannyMP.local.props (not in git) and set your Granny folder. -->
+  <PropertyGroup>
+    <GameDir>C:\Program Files (x86)\Steam\steamapps\common\Granny</GameDir>
+  </PropertyGroup>
+</Project>

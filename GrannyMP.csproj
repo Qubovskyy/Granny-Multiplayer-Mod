@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Build (Windows, .NET SDK 6+):  dotnet build -c Release
+    The game folder (Granny with BepInEx 6 IL2CPP installed and run once, so BepInEx\interop exists) is taken from
+    GameDir: put it in GrannyMP.local.props (copy GrannyMP.local.props.example, the file is not in git) or pass
+    -p:GameDir="C:\...\Granny". The DLL is written straight to <GameDir>\BepInEx\plugins\GrannyMP\.
+  -->
+  <Import Project="GrannyMP.local.props" Condition="Exists('GrannyMP.local.props')" />
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <AssemblyName>GrannyMP</AssemblyName>
+    <RootNamespace>GrannyMP</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <NoWarn>CS0618;CS0612;CS8632</NoWarn>
+    <GameDir Condition="'$(GameDir)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Granny</GameDir>
+    <OutputPath>$(GameDir)\BepInEx\plugins\GrannyMP\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="tools\**" />
+    <Reference Include="$(GameDir)\BepInEx\core\BepInEx.Core.dll" Private="false" />
+    <Reference Include="$(GameDir)\BepInEx\core\BepInEx.Unity.IL2CPP.dll" Private="false" />
+    <Reference Include="$(GameDir)\BepInEx\core\BepInEx.Unity.Common.dll" Private="false" />
+    <Reference Include="$(GameDir)\BepInEx\core\Il2CppInterop.Runtime.dll" Private="false" />
+    <Reference Include="$(GameDir)\BepInEx\core\Il2CppInterop.Common.dll" Private="false" />
+    <Reference Include="$(GameDir)\BepInEx\core\0Harmony.dll" Private="false" />
+    <Reference Include="$(GameDir)\BepInEx\interop\*.dll" Private="false" />
+  </ItemGroup>
+  <!-- the icon next to the DLL -->
+  <ItemGroup>
+    <None Include="assets\beartrap-icon.png" CopyToOutputDirectory="PreserveNewest" Link="beartrap-icon.png" />
+  </ItemGroup>
+</Project>
