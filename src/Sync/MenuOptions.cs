@@ -25,6 +25,22 @@ namespace GrannyMP
 
         public static void RegisterHandlers() => Session.On(Msg.MenuOptions, Handle);
 
+        /// <summary>Host, main menu: "Practice" is chosen as the difficulty (Granny is not in the house).</summary>
+        public static bool PracticeChosen()
+        {
+            Refs();
+            try
+            {
+                if (!U.Alive(_diff)) return false;
+                if (_diff.practiseModeOn) return true;
+                var dd = _diff.dropdownOptions;
+                if (dd == null || dd.options == null || dd.value < 0 || dd.value >= dd.options.Count) return false;
+                var t = dd.options[dd.value].text ?? "";
+                return t.IndexOf("ractic", System.StringComparison.OrdinalIgnoreCase) >= 0 || t.IndexOf("ractis", System.StringComparison.OrdinalIgnoreCase) >= 0;
+            }
+            catch { return false; }
+        }
+
         /// <summary>A player joined: send the current options again.</summary>
         public static void Resend() => _sent = null;
 

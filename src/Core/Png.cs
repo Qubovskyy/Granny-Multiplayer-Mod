@@ -11,12 +11,36 @@ namespace GrannyMP
     /// </summary>
     internal static class Png
     {
-        public static Texture2D Load(string file)
+        /// <summary>
+        /// One of the mod's pictures: a file of that name next to the mod (to replace it), otherwise the copy built into
+        /// GrannyMP.dll (assets/*.png are embedded resources – the mod is a single file).
+        /// </summary>
+        public static Texture2D Asset(string name)
         {
             try
             {
-                if (!File.Exists(file)) return null;
-                var d = File.ReadAllBytes(file);
+                var file = Path.Combine(Path.GetDirectoryName(typeof(Plugin).Assembly.Location) ?? ".", name);
+                if (File.Exists(file)) { var t = Load(file); if (t != null) return t; }
+                using var s = typeof(Plugin).Assembly.GetManifestResourceStream("GrannyMP.assets." + name);
+                if (s == null) { Log.Debug("picture not found: " + name); return null; }
+                var ms = new MemoryStream(); s.CopyTo(ms);
+                var tex = Decode(ms.ToArray());
+                if (tex != null) UnityEngine.Object.DontDestroyOnLoad(tex);
+                return tex;
+            }
+            catch (Exception e) { Log.Debug($"picture {name}: {e.Message}"); return null; }
+        }
+
+        public static Texture2D Load(string file)
+        {
+            try { return File.Exists(file) ? Decode(File.ReadAllBytes(file)) : null; }
+            catch (Exception e) { Log.Debug("png: " + e.Message); return null; }
+        }
+
+        static Texture2D Decode(byte[] d)
+        {
+            try
+            {
                 if (d.Length < 33 || d[0] != 0x89 || d[1] != 'P' || d[2] != 'N' || d[3] != 'G') return null;
                 int w = 0, h = 0, depth = 0, type = 0, interlace = 0; byte[] pal = null, trns = null;
                 var idat = new MemoryStream();
@@ -32,7 +56,7 @@ namespace GrannyMP
                     else if (kind == "IEND") break;
                     p = at + len + 4;
                 }
-                if (w <= 0 || h <= 0 || depth != 8 || interlace != 0) { Log.Warn($"{Path.GetFileName(file)}: only 8-bit, not interlaced PNG files are read"); return null; }
+                if (w <= 0 || h <= 0 || depth != 8 || interlace != 0) { Log.Warn("png: only 8-bit, not interlaced PNG files are read"); return null; }
                 int ch = type switch { 0 => 1, 2 => 3, 3 => 1, 4 => 2, 6 => 4, _ => 0 };
                 if (ch == 0) return null;
                 idat.Position = 0;
@@ -69,7 +93,7 @@ namespace GrannyMP
                 t.Apply();
                 return t;
             }
-            catch (Exception e) { Log.Warn($"{Path.GetFileName(file)}: {e.Message}"); return null; }
+            catch (Exception e) { Log.Warn("png: " + e.Message); return null; }
         }
 
         static int Be(byte[] d, int p) => (d[p] << 24) | (d[p + 1] << 16) | (d[p + 2] << 8) | d[p + 3];

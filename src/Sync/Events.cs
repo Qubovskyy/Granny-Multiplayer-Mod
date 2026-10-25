@@ -9,6 +9,7 @@ namespace GrannyMP
     internal static class Events
     {
         public static bool Forwarding;      // the host is running a forwarded trigger
+        public static byte LastForwardBy = 255; public static float LastForwardAt = -10f; // host: the last forwarded trigger (PvP: who made a noise)
         public static byte ActionBy = 255;  // host: the client whose action (forwarded trigger / RPC) is being executed
         public static bool ActionAlsoLocal; // ...and that client ran it locally too (it already heard the sounds)
         public static bool PlayingRemote;   // playing a sound received from the network
@@ -16,7 +17,7 @@ namespace GrannyMP
         /// <summary>Host: sounds played inside this call are not sent (they have their own message, e.g. Granny's voice).</summary>
         public static bool SuppressSend { get => _suppressSend && _suppressFrame == Time.frameCount; set { _suppressSend = value; _suppressFrame = Time.frameCount; } }
         static readonly Dictionary<string, float> _stayLimiter = new();
-        static Dictionary<string, AudioClip> _clips;
+        static Dictionary<string, List<AudioClip>> _clips;
         static float _clipsBuiltAt;
         static readonly Dictionary<byte, (float t, int n)> _soundRate = new();
         static int _localSoundsThisSecond; static float _localSoundSecond;
@@ -290,6 +291,7 @@ namespace GrannyMP
             var mi = type.GetMethod(mname, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance, null, new[] { typeof(Collider) }, null);
             if (mi == null) return;
             Forwarding = true; ActionBy = from.Id; ActionAlsoLocal = ranLocally;
+            LastForwardBy = from.Id; LastForwardAt = Time.unscaledTime;
             bool spoofed = spoof && AiControl.BeginSpoof(from.Id);
             try
             {
@@ -455,7 +457,7 @@ namespace GrannyMP
                     if (_sentSounds.Count > 256) _sentSounds.Clear();
                 }
                 var w = Session.W(Msg.Sound);
-                w.Byte(kind); w.Byte(Session.LocalId); w.UInt(objId); w.Vec3(pos); w.Str(clip.name); w.Float(vol);
+                w.Byte(kind); w.Byte(Session.LocalId); w.UInt(objId); w.Vec3(pos); w.Str(ClipKey(clip)); w.Float(vol);
                 // the client whose forwarded action made this sound (an item it threw hitting the floor) must hear it
                 // although the item is its own – its game did not play it (the trigger ran here)
                 w.Byte(action);
@@ -467,11 +469,21 @@ namespace GrannyMP
             return true;
         }
 
+        /// <summary>A sound of the local player that does not go through a play call (a play-on-awake sound holder).</summary>
+        public static void SendPlayerSound(AudioClip clip, float vol)
+        {
+            if (!Cfg.ReplicateSounds.Value || !Session.Active || !World.Registered || clip == null) return;
+            var root = GameRefs.PlayerRoot;
+            var w = Session.W(Msg.Sound);
+            w.Byte(1); w.Byte(Session.LocalId); w.UInt(0); w.Vec3(U.Alive(root) ? root.position : Vector3.zero); w.Str(ClipKey(clip)); w.Float(vol); w.Byte(255);
+            Session.Broadcast(w, false);
+        }
+
         /// <summary>Host: a 2D sound produced by a client's action – played 2D for that client only.</summary>
         static void SendFlat(byte to, AudioClip clip, float vol)
         {
             var w = Session.W(Msg.Sound);
-            w.Byte(5); w.Byte(Session.LocalId); w.UInt(0); w.Vec3(Vector3.zero); w.Str(clip.name); w.Float(vol); w.Byte(to);
+            w.Byte(5); w.Byte(Session.LocalId); w.UInt(0); w.Vec3(Vector3.zero); w.Str(ClipKey(clip)); w.Float(vol); w.Byte(to);
             Session.SendTo(to, w, false);
         }
 
@@ -541,7 +553,7 @@ namespace GrannyMP
         }
 
         // ---- items that already lie on the floor make no more fall noise ----
-        static readonly Dictionary<IntPtr, Vector3> _landed = new();
+        static readonly Dictionary<int, Vector3> _landed = new(); // by GetInstanceID (a pointer is reused by a new clone)
         const float LandedMove = 0.3f;
 
         /// <summary>
@@ -556,13 +568,25 @@ namespace GrannyMP
             if (rb == null && other != null) { try { rb = other.attachedRigidbody; } catch { } }
             if (rb == null) return true;
             Vector3 pos; try { pos = rb.position; } catch { return true; }
+            // a prop another player's game simulates (pushed, thrown): here it is only a copy the network moves – its own
+            // trigger hits are not real landings; the owner's game sends the trigger. This copy used to note its position
+            // first, so the owner's real landing a moment later was taken for "not moved" – no sound.
+            if (Session.IsHost)
+            {
+                var no = World.NetObjOf(rb.transform);
+                if (no != null && no.Owner != 255 && no.Owner != Session.LocalId)
+                {
+                    if (!Forwarding || no.Owner != ActionBy) return false;
+                    _landed[rb.GetInstanceID()] = pos; return true; // that client's game checked it on the body it simulates
+                }
+            }
             bool falling = false; try { falling = !rb.isKinematic && rb.linearVelocity.y < -0.5f; } catch { }
-            if (!falling && _landed.TryGetValue(rb.Pointer, out var at) && (pos - at).sqrMagnitude < LandedMove * LandedMove)
+            if (!falling && _landed.TryGetValue(rb.GetInstanceID(), out var at) && (pos - at).sqrMagnitude < LandedMove * LandedMove)
             {
                 if (Cfg.DebugLog.Value) Log.Debug($"fall noise of {rb.name} skipped – it has not moved since it landed");
                 return false;
             }
-            _landed[rb.Pointer] = pos;
+            _landed[rb.GetInstanceID()] = pos;
             if (_landed.Count > 512) _landed.Clear();
             return true;
         }
@@ -598,13 +622,15 @@ namespace GrannyMP
                 Session.Broadcast(w, false, pid);
             }
             if (pid == Session.LocalId && kind != 5) return;
-            if (!GameRefs.InGameScene) return;
+            if (!GameRefs.InGameScene) { Trace(clipName, kind, "not in the game scene"); return; }
             var clip = FindClip(clipName);
-            if (clip == null) return;
+            if (clip == null) { Trace(clipName, kind, "clip not found"); return; }
+            var sentAs = clipName;
+            clipName = clip.name;
             // the same sound from the same place twice within 0.3 s = duplicate (physics jitter, double triggers)
             var key = clipName + "|" + id + "|" + Mathf.RoundToInt(pos.x * 2) + "," + Mathf.RoundToInt(pos.y * 2) + "," + Mathf.RoundToInt(pos.z * 2);
             float tnow = Time.unscaledTime;
-            if (_recentSounds.TryGetValue(key, out var last) && tnow - last < 0.3f) return;
+            if (_recentSounds.TryGetValue(key, out var last) && tnow - last < 0.3f) { Trace(sentAs, kind, "duplicate"); return; }
             _recentSounds[key] = tnow;
             if (_recentSounds.Count > 256) _recentSounds.Clear();
             PlayingRemote = true;
@@ -621,10 +647,11 @@ namespace GrannyMP
                         _flatSource.spatialBlend = 0f; _flatSource.playOnAwake = false;
                     }
                     _flatSource.PlayOneShot(clip, vol);
+                    Trace(sentAs, kind, "played 2D");
                     return;
                 }
                 // my own object – my game already played it (unless the host played it for my forwarded action)
-                if ((kind == 2 || kind == 3) && id != 0 && byAction != Session.LocalId && World.TryGetObj(id, out var no) && no.Owner == Session.LocalId) return;
+                if ((kind == 2 || kind == 3) && id != 0 && byAction != Session.LocalId && World.TryGetObj(id, out var no) && no.Owner == Session.LocalId) { Trace(sentAs, kind, "my own object"); return; }
                 if (kind == 1 && PlayerSync.TryGetAvatar(pid, out var a)) pos = a.Root.transform.position;
                 if ((kind == 2 || kind == 3) && id != 0)
                 {
@@ -632,15 +659,16 @@ namespace GrannyMP
                     var src = U.Alive(tr) ? (tr.GetComponent<AudioSource>() ?? U.ChildComp<AudioSource>(tr)) : null;
                     var orig = src;
                     src = ClientVoiceTarget(src);
-                    if (U.Alive(src) && src != orig && !ClientVoiceAllowed(src, clipName, "sound sync")) return;
+                    if (U.Alive(src) && src != orig && !ClientVoiceAllowed(src, clipName, "sound sync")) { Trace(sentAs, kind, "voice line skipped"); return; }
                     // the local game has just played the same clip on this source itself – do not play it twice
-                    if (U.Alive(orig) && AudioStateSync.PlayedLocally(orig, clipName, 0.35f)) return;
-                    if (U.Alive(src) && src.isActiveAndEnabled) { src.PlayOneShot(clip, vol); NoteRemote(src, clipName); return; }
+                    if (U.Alive(orig) && AudioStateSync.PlayedLocally(orig, clipName, 0.35f)) { Trace(sentAs, kind, "already played here"); return; }
+                    if (U.Alive(src) && src.isActiveAndEnabled) { src.PlayOneShot(clip, vol); NoteRemote(src, clipName); Trace(sentAs, kind, $"played on {src.name} (vol {vol:F2}, 3D {src.spatialBlend:F1}, mute {src.mute})"); return; }
                     if (U.Alive(tr)) pos = tr.position;
                 }
                 // Granny's line: from her head or not at all (with Granny switched off – practice – nobody talks)
-                if (IsVoiceClip(clip)) { if (!PlayVoiceAt(clip, vol, pos)) Log.Debug($"Granny's line '{clipName}' from the network not played – her head is not here"); return; }
+                if (IsVoiceClip(clip)) { if (!PlayVoiceAt(clip, vol, pos)) Log.Debug($"Granny's line '{clipName}' from the network not played – her head is not here"); else Trace(sentAs, kind, "Granny's line"); return; }
                 AudioSource.PlayClipAtPoint(clip, pos, vol);
+                Trace(sentAs, kind, $"played at {U.Dist(pos, GameRefs.LocalPos):F0} m (vol {vol:F2})");
             }
             catch (Exception e) { Log.Debug("play sound: " + e.Message); }
             finally { PlayingRemote = false; }
@@ -669,16 +697,58 @@ namespace GrannyMP
             finally { PlayingRemote = false; }
         }
 
-        static AudioClip FindClip(string name)
+        /// <summary>
+        /// A clip as it is sent: its name and length ("PlayerLand#440"). The game has different clips with the same
+        /// name (PlayerLand: a light step down 0.44 s and a hard landing 1.46 s) – by the name alone the others played
+        /// the hard one after every little drop.
+        /// </summary>
+        public static string ClipKey(AudioClip c) => c.name + "#" + Mathf.RoundToInt(c.length * 1000f);
+
+        // the received sounds and what became of them (debug log, a few a second)
+        static float _traceSecond; static int _traceN;
+        static void Trace(string clip, byte kind, string what)
         {
+            if (!Cfg.DebugLog.Value) return;
+            float now = Time.unscaledTime;
+            if (now - _traceSecond > 1f) { _traceSecond = now; _traceN = 0; }
+            if (++_traceN > 6) return;
+            Log.Debug($"sound in: {clip} (kind {kind}) – {what}");
+        }
+
+        static AudioClip FindClip(string key)
+        {
+            string name = key; int ms = -1;
+            int h = key.LastIndexOf('#');
+            if (h > 0 && int.TryParse(key.Substring(h + 1), out var v)) { name = key.Substring(0, h); ms = v; }
             if (_clips == null || (!_clips.ContainsKey(name) && Time.realtimeSinceStartup - _clipsBuiltAt > 10f))
             {
-                _clips = new Dictionary<string, AudioClip>();
+                _clips = new Dictionary<string, List<AudioClip>>();
                 _clipsBuiltAt = Time.realtimeSinceStartup;
                 foreach (var c in U.AllOfType<AudioClip>())
-                    if (c != null && !_clips.ContainsKey(c.name)) _clips[c.name] = c;
+                {
+                    if (c == null) continue;
+                    if (!_clips.TryGetValue(c.name, out var l)) _clips[c.name] = l = new List<AudioClip>();
+                    if (!l.Exists(x => x.Pointer == c.Pointer)) l.Add(c);
+                }
             }
-            return _clips.TryGetValue(name, out var clip) ? clip : null;
+            if (!_clips.TryGetValue(name, out var list) || list.Count == 0)
+            {
+                if (ms < 0 || !_clips.TryGetValue(key, out list) || list.Count == 0) return null; // a name with '#' of its own
+            }
+            list.RemoveAll(c => c == null); // clips of a scene already unloaded
+            if (list.Count == 0)
+            {
+                if (Time.realtimeSinceStartup - _clipsBuiltAt < 1f) return null;
+                _clips = null; return FindClip(key); // the scene was loaded again: build the list anew
+            }
+            if (ms < 0 || list.Count == 1) return list[0];
+            AudioClip best = list[0]; float bd = float.MaxValue;
+            foreach (var c in list)
+            {
+                float d; try { d = Mathf.Abs(c.length * 1000f - ms); } catch { continue; }
+                if (d < bd) { bd = d; best = c; }
+            }
+            return best;
         }
 
         public static void OnSceneChanged() { _clips = null; _stayLimiter.Clear(); _gs = null; _landed.Clear(); _remotePlayed.Clear(); _voiceClips.Clear(); _voiceClipsAt = -100f; }

@@ -191,7 +191,7 @@ namespace GrannyMP
         {
             if (_out == null) return;
             float vol = Mathf.Clamp(Cfg.VoiceVolume.Value, 0f, 3f);
-            float range = Mathf.Max(3f, Cfg.VoiceRange.Value);
+            float range = Mathf.Max(3f, Session.VoiceRangeNow); // the host's, in a session
             Transform lis = null;
             if (GameRefs.InGameScene)
             {

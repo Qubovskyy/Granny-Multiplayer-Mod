@@ -146,6 +146,11 @@ namespace GrannyMP
                 SprayFx.OnSceneChanged();
                 EscapeSync.OnSceneChanged();
                 FuelSync.OnSceneChanged();
+                SaunaSync.OnSceneChanged();
+                Events.OnSceneChanged(); // the clip cache and the rest of the scene's sound state – kept, the next lobby looked for clips of a scene already gone
+                GrannyEyes.OnSceneChanged();
+                LandSound.OnSceneChanged();
+                NoticeSync.OnSceneChanged();
                 TagSync.Clear();
                 AtticSpider.OnSceneChanged();
                 World.Clear();
@@ -389,6 +394,8 @@ namespace GrannyMP
             if (!Session.IsHost) return;
             if (!Session.AllReady) { Session.Notify(L.T("Not all players are ready.", "Nie wszyscy gracze są gotowi."), false); return; }
             if (IsPlayScene(CurrentScene)) { Session.Notify(L.T("The game is already running.", "Gra już trwa."), false); return; }
+            if (Session.PvpOn && MenuOptions.PracticeChosen())
+            { Session.Notify(L.T("PvP cannot be played in Practice (there is no Granny) – choose another difficulty in Play / Options.", "PvP nie działa w trybie Practice (nie ma Granny) – wybierz inną trudność w Graj / Opcje."), false); return; }
             Log.Info("Host starts the game");
             try
             {
@@ -1002,12 +1009,20 @@ namespace GrannyMP
         static void KeepFallTimerReset()
         {
             if (!Session.Active || !GameRefs.InGameScene) return;
-            bool hold = InTransition || StartHolding || Session.GodMode || (Session.Local?.Ghost ?? false) || Spectator.Active;
-            if (!hold) return;
+            bool hold = InTransition || StartHolding || (Session.Local?.Ghost ?? false) || Spectator.Active;
+            if (!hold && !Session.GodMode) return;
             var fps = GameRefs.Fps;
             try
             {
                 if (!U.Alive(fps)) return;
+                if (!hold)
+                {
+                    // god mode: a fall does not kill, but it is still a fall – the timer stops just below fallDead, so a
+                    // long fall ends as the hard landing (the camera falls over and gets up) instead of not at all
+                    float dead = fps.fallDead, hurt = fps.fallHurtBad;
+                    if (dead > hurt && fps.timeInAir > dead - 0.05f) fps.timeInAir = dead - 0.05f;
+                    return;
+                }
                 if (fps.timeInAir > 0f) fps.timeInAir = 0f;
                 if (fps.fallTimerStarted) fps.fallTimerStarted = false;
             }

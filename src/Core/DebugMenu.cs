@@ -18,7 +18,7 @@ namespace GrannyMP
         public static void Update()
         {
             if (!Session.Active || !GameRefs.InGameScene) { if (Open) Toggle(false); return; }
-            if (!Session.IsHost) { if (Open) Toggle(false); return; }
+            if (!Session.IsHost || !Badges.LocalIsDev) { if (Open) Toggle(false); return; } // the team only (DEV SteamIDs)
             if (!LobbyUI.CapturingKey && !LobbyUI.TypingInField && In.KeyDown(Cfg.DebugKey.Value)) Toggle(!Open);
         }
 

@@ -125,6 +125,49 @@ namespace GrannyMP
             return t;
         }
 
+        static Font _fontBold, _fontLight; static bool _fontTried;
+        /// <summary>
+        /// The pause menu has no font – its words are pictures in stone-textured small capitals. The closest Windows font
+        /// is Copperplate Gothic (installed with Office); without it the default font stays.
+        /// </summary>
+        static void MenuFonts()
+        {
+            if (_fontTried) return;
+            _fontTried = true;
+            try
+            {
+                var dir = Environment.GetFolderPath(Environment.SpecialFolder.Fonts);
+                if (System.IO.File.Exists(System.IO.Path.Combine(dir, "COPRGTB.TTF"))) _fontBold = OsFont("Copperplate Gothic Bold");
+                if (System.IO.File.Exists(System.IO.Path.Combine(dir, "COPRGTL.TTF"))) _fontLight = OsFont("Copperplate Gothic Light");
+                foreach (var f in new[] { _fontBold, _fontLight }) if (f != null) { f.hideFlags = HideFlags.HideAndDontSave; UnityEngine.Object.DontDestroyOnLoad(f); }
+                Log.Debug($"lobby window font: {(_fontBold != null ? "Copperplate Gothic" : "the default (Copperplate Gothic is not installed)")}");
+            }
+            catch (Exception e) { Log.Debug("lobby font: " + e.Message); _fontBold = _fontLight = null; }
+        }
+
+        /// <summary>A dynamic font of a Windows font (Font(string) is stripped – its native part is called directly).</summary>
+        static Font OsFont(string name)
+        {
+            var f = new Font();
+            Font.Internal_CreateFont(f, name);
+            return f;
+        }
+
+        static Texture2D _panelTex; static bool _panelTried;
+        /// <summary>The pause menu's panel (menu-panel.png next to the mod), null without it.</summary>
+        static Texture2D PanelTexture()
+        {
+            if (_panelTried) return _panelTex;
+            _panelTried = true;
+            try
+            {
+                _panelTex = Png.Asset("menu-panel.png");
+                if (_panelTex != null) { _panelTex.hideFlags = HideFlags.HideAndDontSave; _panelTex.wrapMode = TextureWrapMode.Clamp; }
+            }
+            catch (Exception e) { Log.Debug("panel texture: " + e.Message); }
+            return _panelTex;
+        }
+
         static GUIStyle Style(int size, Color text, Texture2D bg = null, Texture2D hover = null, TextAnchor align = TextAnchor.MiddleLeft, bool bold = false, bool wrap = false)
         {
             var s = new GUIStyle();
@@ -144,23 +187,30 @@ namespace GrannyMP
         static void Styles()
         {
             if (_stylesReady && U.Alive(_bg)) return;
-            _bg = Tex(new Color(0.07f, 0.07f, 0.08f, 0.96f));
-            _bgDark = Tex(new Color(0.13f, 0.13f, 0.15f, 1f));
-            _accent = Tex(new Color(0.55f, 0.08f, 0.08f, 1f));
+            // the look of the game's pause menu: its black panel with the torn white edge (Bakgrundoptionmenu, shipped
+            // as menu-panel.png next to the mod), stone-grey texts, plain dark buttons
+            _bg = Tex(new Color(0.02f, 0.02f, 0.02f, 0.97f));
+            _bgDark = Tex(new Color(0f, 0f, 0f, 0.45f));
+            _accent = Tex(new Color(0.45f, 0.06f, 0.06f, 0.95f));
             _white = Tex(Color.white);
-            var btnBg = Tex(new Color(0.22f, 0.22f, 0.25f, 1f));
-            var btnHover = Tex(new Color(0.32f, 0.32f, 0.36f, 1f));
-            var accHover = Tex(new Color(0.7f, 0.12f, 0.12f, 1f));
-            var fieldBg = Tex(new Color(0.03f, 0.03f, 0.04f, 1f));
-            var txt = new Color(0.92f, 0.92f, 0.92f);
+            var btnBg = Tex(new Color(0.11f, 0.11f, 0.11f, 0.9f));
+            var btnHover = Tex(new Color(0.24f, 0.23f, 0.22f, 0.95f));
+            var accHover = Tex(new Color(0.62f, 0.1f, 0.1f, 1f));
+            var fieldBg = Tex(new Color(0.06f, 0.06f, 0.06f, 1f));
+            var txt = new Color(0.87f, 0.86f, 0.83f);
             _win = Style(14, txt, _bg);
             _box = Style(14, txt, _bgDark);
-            _title = Style(22, new Color(0.9f, 0.2f, 0.2f), null, null, TextAnchor.MiddleLeft, true);
+            _title = Style(24, new Color(0.93f, 0.91f, 0.87f), null, null, TextAnchor.MiddleLeft, true);
             _label = Style(14, txt, null, null, TextAnchor.UpperLeft, false, true);
-            _small = Style(12, new Color(0.65f, 0.65f, 0.7f), null, null, TextAnchor.UpperLeft, false, true);
+            _small = Style(12, new Color(0.66f, 0.65f, 0.62f), null, null, TextAnchor.UpperLeft, false, true);
             _center = Style(14, txt, null, null, TextAnchor.MiddleCenter);
             _btn = Style(14, txt, btnBg, btnHover, TextAnchor.MiddleCenter);
+            _btn.hover.textColor = Color.white;
             _btnOn = Style(14, Color.white, _accent, accHover, TextAnchor.MiddleCenter, true);
+            // the lettering of the pause menu (small capitals): Copperplate Gothic, when Windows has it
+            MenuFonts();
+            if (_fontBold != null) { _title.font = _fontBold; _btn.font = _fontBold; _btnOn.font = _fontBold; }
+            if (_fontLight != null) { _label.font = _fontLight; _center.font = _fontLight; _label.fontStyle = FontStyle.Bold; }
             _field = Style(14, Color.white, fieldBg, fieldBg, TextAnchor.MiddleLeft);
             _fieldOn = Style(14, Color.white, Tex(new Color(0.1f, 0.06f, 0.06f, 1f)), null, TextAnchor.MiddleLeft);
             _fieldText = Style(14, Color.white, null, null, TextAnchor.MiddleLeft);
@@ -178,6 +228,7 @@ namespace GrannyMP
         {
             _joinTarget = target; Session.LastError = error;
             if (!Open) Toggle();
+            _offPage = 2; _pwPrompt = true; _pwTarget = target; _directOpen = false;
             _focusId = "pass";
         }
 
@@ -235,8 +286,64 @@ namespace GrannyMP
             Styles();
             DrawHud();
             if (Open) DrawLobby();
+            DrawDiscord();
             if (ChatOpen) DrawChatInput();
             if (DebugMenu.Open && !Open) DrawDebug();
+        }
+
+        // ---------------- main menu: the Discord icon (bottom right) ----------------
+        const string DiscordUrl = "https://discord.gg/MrKK6KwMVv";
+        static Texture2D _discord; static bool _discordTried; static float _discordHover;
+
+        static void DrawDiscord()
+        {
+            if (GameFlow.CurrentScene != Cfg.MenuScene.Value) return;
+            if (!_discordTried)
+            {
+                _discordTried = true;
+                try
+                {
+                    _discord = Png.Asset("discord.png");
+                }
+                catch (Exception e) { Log.Debug("discord icon: " + e.Message); }
+            }
+            if (_discord == null) return;
+            const float size = 54f;
+            var spot = new Rect(SW - size - 20, SH - size - 20, size, size);
+            var ev = Event.current;
+            bool over = ev != null && spot.Contains(ev.mousePosition);
+            if (ev != null && ev.type == EventType.Repaint)
+                _discordHover = Mathf.MoveTowards(_discordHover, over ? 1f : 0f, Time.unscaledDeltaTime * 7f);
+            // hover: a little bigger and brighter, with its name above
+            float sz = size * (1f + 0.14f * _discordHover);
+            var r = new Rect(spot.center.x - sz / 2f, spot.center.y - sz / 2f, sz, sz);
+            var gc = GUI.color;
+            if (_discordHover > 0.01f)
+            {
+                GUI.color = new Color(0.35f, 0.4f, 0.95f, 0.35f * _discordHover);
+                float g = sz * 1.25f; GUI.DrawTexture(new Rect(spot.center.x - g / 2f, spot.center.y - g / 2f, g, g), _discord);
+            }
+            float b = 0.82f + 0.18f * _discordHover;
+            GUI.color = new Color(b, b, b, 1f);
+            GUI.DrawTexture(r, _discord);
+            GUI.color = gc;
+            if (_discordHover > 0.05f)
+            {
+                var c = _tag.normal.textColor;
+                _tag.normal.textColor = new Color(1f, 1f, 1f, _discordHover);
+                GUI.Label(new Rect(spot.center.x - 60, r.y - 24, 120, 22), "Discord", _tag);
+                _tag.normal.textColor = c;
+            }
+            if (GUI.Button(spot, "", _clear))
+            {
+                try { Application.OpenURL(DiscordUrl); }
+                catch
+                {
+                    try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(DiscordUrl) { UseShellExecute = true }); }
+                    catch (Exception e) { Log.Warn("Discord link: " + e.Message); }
+                }
+                Log.Info("Opened the Discord invite");
+            }
         }
 
         // ---------------- HUD ----------------
@@ -286,22 +393,9 @@ namespace GrannyMP
                     }
                 }
             }
-            // player list in the corner
+            if (cam != null && Pvp.LocalIsGranny && Pvp.RevealUntil.Count > 0) DrawReveals(cam);
             if (!Open)
             {
-                float y = 8;
-                GUI.Label(new Rect(10, y, 640, 20), $"Co-op ({Session.Players.Count}/{Cfg.MaxPlayers.Value}) · {ModeName(Session.Mode)} · {Cfg.ToggleKey.Value}: {L.T("lobby", "lobby")} · {Cfg.ChatKey.Value}: {L.T("chat", "czat")}{VoiceHint()}", _small);
-                y += 18;
-                foreach (var p in Session.Players.Values.OrderBy(p => p.Id))
-                {
-                    var c = _small.normal.textColor;
-                    float nx = 10;
-                    if (Badges.Of(p.Id, out var badge, out var badgeColor)) nx += ColoredLabel(new Rect(nx, y, 80, 20), "[" + badge + "] ", badgeColor, _small);
-                    _small.normal.textColor = Session.ColorOf(p.Id);
-                    GUI.Label(new Rect(nx, y, 480, 20), $"{p.Name}{(Pvp.IsGranny(p.Id) ? "  [GRANNY]" : "")}  [{PlaceOf(p)}]  {(p.IsHost ? "" : p.PingMs + " ms")}{(VoiceChat.IsSpeaking(p.Id) ? L.T("  · talking", "  · mówi") : "")}", _small);
-                    _small.normal.textColor = c;
-                    y += 16;
-                }
                 if (GameFlow.WaitingForWorld) GUI.Label(new Rect(SW / 2 - 250, 60, 500, 30), L.T("Synchronising with the host's world...", "Synchronizacja ze światem hosta..."), _notice);
                 else if (GameFlow.WaitingForPlayers) GUI.Label(new Rect(SW / 2 - 300, 60, 600, 30), L.T("Waiting for all players to load Granny's house...", "Czekamy, aż wszyscy gracze załadują dom Granny..."), _notice);
             }
@@ -362,6 +456,57 @@ namespace GrannyMP
             catch { }
             _tagOcc[a.Id] = (now + 0.15f, hidden);
             return hidden;
+        }
+
+        /// <summary>
+        /// PvP, playing Granny: a survivor who made a noise – a red ring where they are (through the walls; at the edge of
+        /// the screen when they are behind), with how far away they are inside.
+        /// </summary>
+        static void DrawReveals(Camera cam)
+        {
+            float now = Time.unscaledTime;
+            var ring = Ring();
+            var gc = GUI.color;
+            foreach (var kv in Pvp.RevealUntil)
+            {
+                if (now > kv.Value || !PlayerSync.TryGetAvatar(kv.Key, out var a) || !a.HasData || (a.Flags & PlayerSync.F_Ghost) != 0) continue;
+                var feet = a.Root.transform.position;
+                var mid = feet + Vector3.up * Mathf.Max(0.6f, a.CamY * 0.6f);
+                float dist = Vector3.Distance(cam.transform.position, mid);
+                var sp = cam.WorldToScreenPoint(mid);
+                float sx = sp.x / _scale, sy = SH - sp.y / _scale;
+                if (sp.z < 0.1f) { sx = SW - sx; sy = SH - 40f; } // behind: on the bottom edge, on the side it is
+                float r = Mathf.Clamp(520f / Mathf.Max(1f, dist), 26f, 70f);
+                sx = Mathf.Clamp(sx, r + 4, SW - r - 4); sy = Mathf.Clamp(sy, r + 4, SH - r - 4);
+                float left = kv.Value - now, alpha = Mathf.Clamp01(left / 0.6f) * (0.8f + 0.2f * Mathf.Sin(now * 9f));
+                GUI.color = new Color(1f, 0.1f, 0.06f, alpha);
+                GUI.DrawTexture(new Rect(sx - r, sy - r, 2 * r, 2 * r), ring);
+                GUI.color = gc;
+                var txt = Mathf.RoundToInt(dist) + " m";
+                var c = _tag.normal.textColor;
+                _tag.normal.textColor = new Color(0f, 0f, 0f, alpha); GUI.Label(new Rect(sx - r + 1, sy - 11, 2 * r, 24), txt, _tag);
+                _tag.normal.textColor = new Color(1f, 0.25f, 0.2f, alpha); GUI.Label(new Rect(sx - r, sy - 12, 2 * r, 24), txt, _tag);
+                _tag.normal.textColor = c;
+            }
+            GUI.color = gc;
+        }
+
+        static Texture2D _ring;
+        static Texture2D Ring()
+        {
+            if (_ring != null) return _ring;
+            const int n = 128; const float outer = 62f, width = 7f;
+            var t = new Texture2D(n, n, TextureFormat.RGBA32, false) { hideFlags = HideFlags.HideAndDontSave, filterMode = FilterMode.Bilinear, wrapMode = TextureWrapMode.Clamp };
+            for (int y = 0; y < n; y++)
+                for (int x = 0; x < n; x++)
+                {
+                    float u = x + 0.5f - n / 2f, v = y + 0.5f - n / 2f, d = Mathf.Sqrt(u * u + v * v);
+                    float edge = Mathf.Min(outer - d, d - (outer - width));
+                    float fill = d < outer - width ? 0.12f : 0f; // a faint inside
+                    t.SetPixel(x, y, new Color(1f, 1f, 1f, Mathf.Max(fill, Mathf.Clamp01(edge + 0.5f))));
+                }
+            t.Apply();
+            return _ring = t;
         }
 
         /// <summary>The camera that is drawing the picture now (Camera.main is a disabled camera in this game).</summary>
@@ -434,8 +579,15 @@ namespace GrannyMP
             var gc = GUI.color; GUI.color = Color.black; GUI.DrawTexture(new Rect(0, 0, SW, SH), _white); GUI.color = gc;
             int s = Pvp.RespawnSeconds;
             if (_tag == null) return;
+            if (Pvp.KnockedOut)
+            {
+                GUI.Label(new Rect(0, SH / 2 - 40, SW, 36), L.T("Granny is knocked out", "Granny jest ogłuszona"), _notice);
+                GUI.Label(new Rect(0, SH / 2 + 4, SW, 30), L.T("You come back when she gets up...", "Wrócisz, gdy wstanie..."), _notice);
+                return;
+            }
             GUI.Label(new Rect(0, SH / 2 - 120, SW, 36), L.T("You are GRANNY", "Grasz jako GRANNY"), _notice);
             GUI.Label(new Rect(0, SH / 2 - 70, SW, 120), s > 0 ? s.ToString() : "...", _huge);
+            if (Pvp.WaitingDayTitle) { GUI.Label(new Rect(0, SH / 2 + 60, SW, 30), L.T("The day is starting...", "Zaczyna się dzień..."), _notice); return; }
             GUI.Label(new Rect(0, SH / 2 + 60, SW, 30), s > 0
                 ? L.T("The survivors are waking up – you come back where Granny starts the day.", "Ocaleni się budzą – wrócisz tam, gdzie Granny zaczyna dzień.")
                 : L.T("Getting up...", "Wstajesz..."), _notice);
@@ -448,7 +600,7 @@ namespace GrannyMP
             {
                 // the picture next to the mod (beartrap-icon.png), otherwise a drawn one
                 _trapIconTried = true;
-                _trapIcon = Png.Load(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(typeof(Plugin).Assembly.Location) ?? ".", "beartrap-icon.png"));
+                _trapIcon = Png.Asset("beartrap-icon.png");
                 if (_trapIcon == null) _trapIcon = MakeTrapIcon();
             }
             if (!U.Alive(_trapIcon)) return;
@@ -544,34 +696,36 @@ namespace GrannyMP
         {
             // the character choice gets a bigger window – the previews are large there
             bool big = _settings && _characters;
-            float w = Mathf.Min(big ? 1100 : 900, SW - 40), h = Mathf.Min(big ? 820 : _settings ? 668 : 600, SH - 40);
+            float w = Mathf.Min(big ? 1100 : 900, SW - 40), h = Mathf.Min(big ? 820 : _settings ? 700 : 600, SH - 40);
             var win = new Rect((SW - w) / 2, (SH - h) / 2, w, h);
-            GUI.Box(win, "", _win);
-            float x = win.x + 18, y = win.y + 12, cw = w - 36;
+            var panel = PanelTexture();
+            if (panel != null) GUI.DrawTexture(win, panel, ScaleMode.StretchToFill);
+            else GUI.Box(win, "", _win);
+            float x = win.x + 30, y = win.y + 22, cw = w - 60;
             GUI.Label(new Rect(x, y, cw, 30), "GRANNY MP", _title);
-            GUI.Label(new Rect(x + 200, y + 8, cw - 520, 22), $"v{Plugin.ModVersion} · {Session.Status}", _small);
-            if (GearButton(new Rect(win.xMax - 86, y - 1, 32, 28), _settings)) { if (_settings) CloseSettings(); else OpenSettings(); }
-            if (GUI.Button(new Rect(win.xMax - 46, y, 30, 26), "X", _btn)) Toggle();
+            GUI.Label(new Rect(x + 200, y + 8, cw - 520, 22), $"v{Plugin.ModVersion} (beta)", _small);
+            if (GearButton(new Rect(win.xMax - 98, y - 1, 32, 28), _settings)) { if (_settings) CloseSettings(); else OpenSettings(); }
+            if (GUI.Button(new Rect(win.xMax - 58, y, 30, 26), "X", _btn)) Toggle();
             y += 40;
 
-            if (_settings) DrawSettings(x, y, cw, win.yMax - y - 14);
-            else if (_serverCfg && Session.State == SessionState.Connected) DrawServerConfig(x, y, cw, win.yMax - y - 14);
+            if (_settings) DrawSettings(x, y, cw, win.yMax - y - 24);
+            else if (_serverCfg && Session.State == SessionState.Connected) DrawServerConfig(x, y, cw, win.yMax - y - 24);
             else if (Session.State == SessionState.Offline)
             {
-                DrawOffline(x, y, cw, win.yMax - y - 14);
-                if (GameFlow.CurrentScene == Cfg.GameScene.Value && GUI.Button(new Rect(win.xMax - 290, win.y + 12, 190, 26), L.T("Back to menu", "Wyjdź do menu"), _btn)) { Toggle(); GameFlow.GoToMenu(); }
+                DrawOffline(x, y, cw, win.yMax - y - 24);
+                if (GameFlow.CurrentScene == Cfg.GameScene.Value && GUI.Button(new Rect(win.xMax - 302, win.y + 22, 190, 26), L.T("Back to menu", "Wyjdź do menu"), _btn)) { Toggle(); GameFlow.GoToMenu(); }
             }
             else if (Session.State == SessionState.Connecting)
             {
                 GUI.Label(new Rect(x, y, cw, 30), Session.Status, _label);
                 if (GUI.Button(new Rect(x, y + 40, 160, 32), L.T("Cancel", "Anuluj"), _btn)) Session.Shutdown(L.T("Cancelled", "Anulowano"));
             }
-            else DrawConnected(x, y, cw, win.yMax - y - 14);
+            else DrawConnected(x, y, cw, win.yMax - y - 24);
 
             if (!string.IsNullOrEmpty(Session.LastError))
             {
                 var c = _label.normal.textColor; _label.normal.textColor = new Color(1f, 0.45f, 0.45f);
-                GUI.Label(new Rect(x, win.yMax - 36, cw, 24), Session.LastError, _label);
+                GUI.Label(new Rect(x, win.yMax - 48, cw, 24), Session.LastError, _label);
                 _label.normal.textColor = c;
             }
         }
@@ -589,14 +743,13 @@ namespace GrannyMP
             GUI.enabled = true;
         }
 
-        /// <summary>The host's server options (the clients see them, greyed out).</summary>
+        /// <summary>The host's server options (the clients see them, greyed out) – one panel.</summary>
         static void DrawServerConfig(float x, float y, float w, float h)
         {
-            bool host = Session.IsHost;
-            float col = (w - 20) / 2;
-            GUI.Box(new Rect(x, y, col, h - 44), "", _box);
-            float lx = x + 12, ly = y + 10, lw = col - 24;
-            GUI.Label(new Rect(lx, ly, lw, 24), L.T("SERVER CONFIGURATION", "KONFIGURACJA SERWERA") + (host ? "" : L.T(" (set by the host)", " (ustawia host)")), _label); ly += 32;
+            bool host = Session.IsHost && !Session.HostInGame; // not while a game is running
+            GUI.Box(new Rect(x, y, w, h - 44), "", _box);
+            float lx = x + 16, ly = y + 10, lw = Mathf.Min(w - 32, 640);
+            GUI.Label(new Rect(lx, ly, lw, 24), L.T("SERVER CONFIGURATION", "KONFIGURACJA SERWERA") + (Session.HostInGame ? L.T(" (the game is running – change it in the lobby)", " (gra trwa – zmienisz w lobby)") : Session.IsHost ? "" : L.T(" (set by the host)", " (ustawia host)")), _label); ly += 32;
             CheckRow(new Rect(lx, ly, lw, 28), Session.JoinInProgress, L.T("Allow joining during the game", "Dołączanie w trakcie gry"), host,
                 v => { Session.JoinInProgress = v; Cfg.AllowJoinInProgress.Value = v; Session.PushSettings(); });
             ly += 34;
@@ -609,44 +762,95 @@ namespace GrannyMP
             ly += 34;
             CheckRow(new Rect(lx, ly, lw, 28), Session.LockFov, L.T("Lock the field of view (no custom FOV)", "Blokada własnego FOV"), host,
                 v => { Session.LockFov = v; Cfg.LockFov.Value = v; Session.PushSettings(); });
-            ly += 34;
-            GUI.Label(new Rect(lx, ly, lw, 60), L.T("With the lock on everybody plays with the game's own field of view (the FOV in the settings is ignored).",
+            ly += 30;
+            GUI.Label(new Rect(lx, ly, lw, 22), L.T("With the lock on everybody plays with the game's own field of view.",
                 "Z blokadą wszyscy grają z polem widzenia gry (FOV z ustawień jest pomijany)."), _small);
+            ly += 30;
 
-            // ---- PvP: who plays Granny ----
-            float rx = x + col + 20;
-            GUI.Box(new Rect(rx, y, col, h - 44), "", _box);
-            rx += 12; float ry = y + 10, rw = col - 24;
-            GUI.Label(new Rect(rx, ry, rw, 24), L.T("PvP – WHO PLAYS GRANNY", "PvP – KTO GRA JAKO GRANNY"), _label); ry += 30;
-            if (!Session.PvpOn) { GUI.Label(new Rect(rx, ry, rw, 40), L.T("PvP is off (game mode in the lobby).", "PvP jest wyłączone (tryb gry w lobby)."), _small); ry += 40; }
-            bool canPick = host && !Session.HostInGame;
-            GUI.enabled = canPick;
-            if (GUI.Button(new Rect(rx, ry, rw, 28), L.T("A random player", "Losowy gracz"), Session.GrannyChoice == 255 ? _btnOn : _btn)) { Session.GrannyChoice = 255; Session.PushSettings(); }
-            ry += 34;
-            foreach (var p in Session.Players.Values.OrderBy(p => p.Id))
+            // voice chat range, PvP Granny speed (sent to everybody; a slider is sent once it stops moving)
+            GUI.enabled = host;
+            GUI.Label(new Rect(lx, ly + 3, 220, 22), L.T("Voice chat range:", "Zasięg czatu głosowego:"), _small);
+            float vr = Slider("cfgvoice", new Rect(lx + 220, ly, lw - 290, 24), Session.VoiceRange, 3f, 100f, 1f);
+            GUI.Label(new Rect(lx + lw - 62, ly + 3, 62, 22), Mathf.RoundToInt(Session.VoiceRange) + " m", _small);
+            if (host && Mathf.Abs(vr - Session.VoiceRange) > 0.001f) { Session.VoiceRange = vr; Cfg.VoiceRange.Value = vr; _cfgPushAt = Time.unscaledTime + 0.3f; }
+            ly += 32;
+            // PvP options only with PvP as the game mode
+            bool pvp = Session.PvpOn;
+            if (pvp)
             {
-                if (ry > y + h - 90) break;
-                bool sel = Session.GrannyChoice == p.Id;
-                if (GUI.Button(new Rect(rx, ry, rw, 28), p.Name + (p.IsHost ? "  [HOST]" : ""), sel ? _btnOn : _btn)) { Session.GrannyChoice = p.Id; Session.PushSettings(); }
-                ry += 32;
+                GUI.Label(new Rect(lx, ly + 3, 220, 22), L.T("[PvP] Granny's speed:", "[PvP] Prędkość Granny:"), _small);
+                float gs = Slider("cfgspeed", new Rect(lx + 220, ly, lw - 290, 24), Session.GrannySpeed, 0.5f, 2f, 0.05f);
+                GUI.Label(new Rect(lx + lw - 62, ly + 3, 62, 22), "x" + Session.GrannySpeed.ToString("0.00"), _small);
+                if (host && Mathf.Abs(gs - Session.GrannySpeed) > 0.0001f) { Session.GrannySpeed = gs; Cfg.PvpGrannySpeed.Value = gs; _cfgPushAt = Time.unscaledTime + 0.3f; }
+                ly += 34;
             }
             GUI.enabled = true;
-            if (Session.HostInGame) GUI.Label(new Rect(rx, ry + 4, rw, 40), L.T("Chosen when the game starts – it is running now.", "Wybierane przy starcie gry – gra już trwa."), _small);
-            if (GUI.Button(new Rect(x + w - 160, y + h - 36, 160, 32), L.T("Back", "Wróć"), _btn)) _serverCfg = false;
+            if (_cfgPushAt > 0 && Time.unscaledTime >= _cfgPushAt) { _cfgPushAt = -1; Session.PushSettings(); }
+            if (!pvp) _grannyDrop = false;
+
+            // ---- PvP: who plays Granny (a drop-down; the last row, its list opens over the empty space below) ----
+            if (pvp) {
+            GUI.Label(new Rect(lx, ly + 4, 220, 22), L.T("[PvP] Who plays Granny:", "[PvP] Kto gra jako Granny:"), _small);
+            bool canPick = host && !Session.HostInGame;
+            GUI.enabled = canPick;
+            var dd = new Rect(lx + 220, ly, lw - 220, 28);
+            if (GUI.Button(dd, GrannyChoiceName() + (_grannyDrop ? "   ^" : "   v"), _btn)) _grannyDrop = !_grannyDrop;
+            GUI.enabled = true;
+            if (!canPick) _grannyDrop = false;
+            ly += 32;
+            if (_grannyDrop)
+            {
+                var opts = new List<(byte id, string name)> { (255, L.T("A random player", "Losowy gracz")) };
+                foreach (var p in Session.Players.Values.OrderBy(p => p.Id)) opts.Add((p.Id, p.Name + (p.IsHost ? "  [HOST]" : "")));
+                float oy = ly;
+                GUI.Box(new Rect(dd.x, oy - 2, dd.width, opts.Count * 28 + 4), "", _win);
+                foreach (var (id, name) in opts)
+                {
+                    if (oy > y + h - 80) break;
+                    if (GUI.Button(new Rect(dd.x + 2, oy, dd.width - 4, 26), name, Session.GrannyChoice == id ? _btnOn : _btn))
+                    { Session.GrannyChoice = id; Session.PushSettings(); _grannyDrop = false; }
+                    oy += 28;
+                }
+            }
+            else
+            {
+                string note = Session.HostInGame ? L.T("Chosen when the game starts – it is running now.", "Wybierane przy starcie gry – gra już trwa.") : "";
+                if (note != "") GUI.Label(new Rect(lx + 220, ly, lw - 220, 22), note, _small);
+            }
+            }
+            if (GUI.Button(new Rect(x + w - 160, y + h - 36, 160, 32), L.T("Back", "Wróć"), _btn)) { _serverCfg = false; _grannyDrop = false; if (_cfgPushAt > 0) { _cfgPushAt = -1; Session.PushSettings(); } }
         }
+        static bool _grannyDrop; static float _cfgPushAt = -1;
         static bool _hostDirect;
+
+        static int _offPage; // 0 = Host Game / Join Game, 1 = hosting, 2 = joining
 
         static void DrawOffline(float x, float y, float w, float h)
         {
-            float col = (w - 20) / 2;
-            // left column – hosting
-            GUI.Box(new Rect(x, y, col, h - 40), "", _box);
+            if (_offPage == 0) { DrawStartPage(x, y, w, h); return; }
+            if (GUI.Button(new Rect(x, y + h - 36, 160, 32), L.T("Back", "Wróć"), _btn))
+            {
+                if (_pwPrompt) _pwPrompt = false; else if (_directOpen) _directOpen = false; else _offPage = 0;
+                return;
+            }
+            float col = Mathf.Min(w, 560), bx = x + (w - col) / 2;
+            if (_offPage == 1) DrawHostPage(bx, y, col, h - 44); else DrawJoinPage(x, y, w, h - 44);
+        }
+
+        static void DrawStartPage(float x, float y, float w, float h)
+        {
+            float bw = Mathf.Min(420, w - 40), bh = 70, cx = x + (w - bw) / 2, cy = y + (h - 44) / 2 - bh - 10;
+            GUI.Label(new Rect(x, cy - 46, w, 24), L.T($"Playing as {Session.LocalName} – the name can be changed in the settings (gear).",
+                $"Grasz jako {Session.LocalName} – nick zmienisz w ustawieniach (koło zębate)."), _center);
+            if (GUI.Button(new Rect(cx, cy, bw, bh), L.T("Host Game", "Hostuj grę"), _btnOn)) _offPage = 1;
+            if (GUI.Button(new Rect(cx, cy + bh + 20, bw, bh), L.T("Join Game", "Dołącz do gry"), _btn)) _offPage = 2;
+        }
+
+        static void DrawHostPage(float x, float y, float col, float h)
+        {
+            GUI.Box(new Rect(x, y, col, h), "", _box);
             float ly = y + 10, lx = x + 12, lw = col - 24;
-            GUI.Label(new Rect(lx, ly, lw, 22), L.T("Your name", "Twój nick"), _small); ly += 20;
-            var nn = Field("name", new Rect(lx, ly, lw, 28), _name, 24, out _);
-            if (nn != _name) { _name = nn; Cfg.PlayerName.Value = nn; }
-            ly += 44;
-            GUI.Label(new Rect(lx, ly, lw, 24), L.T("HOST A GAME", "HOSTUJ GRĘ"), _label); ly += 26;
+            GUI.Label(new Rect(lx, ly, lw, 24), L.T("HOST A GAME", "HOSTUJ GRĘ"), _label); ly += 30;
             GUI.Label(new Rect(lx, ly + 4, 150, 22), L.T("Password (optional):", "Hasło (opcjonalne):"), _small);
             var hp = Field("hostpass", new Rect(lx + 140, ly, lw - 140, 26), Cfg.Password.Value, 32, out _, true);
             if (hp != Cfg.Password.Value) Cfg.Password.Value = hp;
@@ -691,55 +895,95 @@ namespace GrannyMP
                     : L.T("Direct IP: friends connect to your IP address and port. Over the internet you need UDP port forwarding or a VPN like Radmin/ZeroTier/Hamachi.",
                     "Direct IP: znajomi łączą się na Twój adres IP i port. Przez internet potrzebne jest przekierowanie portu UDP albo VPN typu Radmin/ZeroTier/Hamachi."), _small);
             }
+        }
 
-            // right column – joining
-            float rx = x + col + 20;
-            GUI.Box(new Rect(rx, y, col, h - 40), "", _box);
-            float ry = y + 10; rx += 12; float rw = col - 24;
-            GUI.Label(new Rect(rx, ry, rw, 24), L.T("JOIN A GAME", "DOŁĄCZ DO GRY"), _label); ry += 28;
-            // ---- Steam server list ----
-            GUI.Label(new Rect(rx, ry + 4, rw - 110, 22), L.T("Steam games (public + friends)", "Gry Steam (publiczne + znajomi)") + (LobbyBrowser.Status != "" ? " · " + LobbyBrowser.Status : ""), _small);
+        static bool _directOpen, _pwPrompt; static string _pwTarget = "";
+
+        /// <summary>Join: the whole panel is the list of Steam lobbies; "Direct..." opens the SteamID / IP field.</summary>
+        static void DrawJoinPage(float x, float y, float w, float h)
+        {
+            if (_pwPrompt) { DrawPasswordPrompt(x, y, w, h); return; }
+            if (_directOpen) { DrawDirectPanel(x, y, w, h); return; }
+            bool steam = SteamNative.TryInit();
+            GUI.Box(new Rect(x, y, w, h), "", _box);
+            float ry = y + 10, rx = x + 14, rw = w - 28;
+            GUI.Label(new Rect(rx, ry, rw - 360, 24), L.T("JOIN A GAME", "DOŁĄCZ DO GRY"), _label);
+            if (GUI.Button(new Rect(rx + rw - 230, ry - 2, 120, 28), L.T("Direct...", "Direct..."), _btn)) { _directOpen = true; _focusId = "join"; }
             GUI.enabled = steam && !LobbyBrowser.Busy;
-            if (GUI.Button(new Rect(rx + rw - 104, ry, 104, 26), L.T("Refresh", "Odśwież"), _btn)) { LobbyBrowser.Refresh(); _listPage = 0; }
+            if (GUI.Button(new Rect(rx + rw - 104, ry - 2, 104, 28), L.T("Refresh", "Odśwież"), _btn)) { LobbyBrowser.Refresh(); _listPage = 0; }
             GUI.enabled = true;
             ry += 30;
-            const int rows = 5; const float rowH = 26;
+            GUI.Label(new Rect(rx, ry, rw, 22), L.T("Steam games (public + friends)", "Gry Steam (publiczne + znajomi)") + (LobbyBrowser.Status != "" ? " · " + LobbyBrowser.Status : ""), _small);
+            ry += 24;
+            const float rowH = 34;
+            float listH = h - (ry - y) - 66;
+            int rows = Mathf.Max(3, Mathf.FloorToInt(listH / rowH));
             GUI.Box(new Rect(rx, ry, rw, rows * rowH + 4), "", _box);
             var list = LobbyBrowser.Entries;
             int pages = Mathf.Max(1, (list.Count + rows - 1) / rows);
             _listPage = Mathf.Clamp(_listPage, 0, pages - 1);
             if (list.Count == 0)
-                GUI.Label(new Rect(rx + 8, ry + 6, rw - 16, 22), steam ? L.T("No games found – press Refresh.", "Nie znaleziono gier – kliknij Odśwież.") : SteamNative.LastError, _small);
+                GUI.Label(new Rect(rx + 10, ry + 10, rw - 20, 24), steam ? L.T("No games found – press Refresh.", "Nie znaleziono gier – kliknij Odśwież.") : SteamNative.LastError, _label);
             for (int i = 0; i < rows; i++)
             {
                 int idx = _listPage * rows + i;
                 if (idx >= list.Count) break;
                 var e = list[idx];
-                float yy = ry + 2 + i * rowH;
-                var label = (e.Friend ? "★ " : "") + (string.IsNullOrEmpty(e.Name) ? e.Lobby.ToString() : e.Name) + $"  ({e.Players}/{(e.Max > 0 ? e.Max : Cfg.MaxPlayers.Value)})" + (e.Password ? L.T("  · password", "  · hasło") : "");
-                GUI.Label(new Rect(rx + 8, yy + 2, rw - 100, 22), label, _small);
-                if (GUI.Button(new Rect(rx + rw - 86, yy, 80, rowH - 2), L.T("Join", "Dołącz"), _btn)) { _joinTarget = e.Lobby.ToString(); Session.Join(_joinTarget, _joinPass); }
+                float yy = ry + 4 + i * rowH;
+                var name = (e.Friend ? "★ " : "") + (string.IsNullOrEmpty(e.Name) ? e.Lobby.ToString() : e.Name);
+                GUI.Label(new Rect(rx + 10, yy + 5, rw - 330, 24), name, _label);
+                GUI.Label(new Rect(rx + rw - 310, yy + 7, 90, 22), $"{e.Players}/{(e.Max > 0 ? e.Max : Cfg.MaxPlayers.Value)}", _small);
+                if (e.Password) GUI.Label(new Rect(rx + rw - 220, yy + 7, 110, 22), L.T("password", "hasło"), _small);
+                if (GUI.Button(new Rect(rx + rw - 104, yy, 98, rowH - 4), L.T("Join", "Dołącz"), _btnOn))
+                {
+                    _joinTarget = e.Lobby.ToString();
+                    if (e.Password) { _pwPrompt = true; _pwTarget = _joinTarget; _joinPass = ""; _focusId = "pass"; Session.LastError = ""; }
+                    else Session.Join(_joinTarget, "");
+                }
             }
-            ry += rows * rowH + 8;
+            ry += rows * rowH + 10;
             if (pages > 1)
             {
-                if (GUI.Button(new Rect(rx, ry - 4, 40, 22), "<", _btn)) _listPage--;
-                GUI.Label(new Rect(rx + 46, ry - 2, 80, 22), $"{_listPage + 1}/{pages}", _small);
-                if (GUI.Button(new Rect(rx + 110, ry - 4, 40, 22), ">", _btn)) _listPage++;
-                ry += 22;
+                if (GUI.Button(new Rect(rx, ry, 40, 26), "<", _btn)) _listPage--;
+                GUI.Label(new Rect(rx + 46, ry + 3, 80, 22), $"{_listPage + 1}/{pages}", _small);
+                if (GUI.Button(new Rect(rx + 110, ry, 40, 26), ">", _btn)) _listPage++;
             }
-            GUI.Label(new Rect(rx, ry, rw, 20), L.T("Steam Lobby ID, host SteamID or IP:port", "Lobby ID Steam, SteamID hosta albo IP:port"), _small); ry += 20;
-            _joinTarget = Field("join", new Rect(rx, ry, rw - 80, 28), _joinTarget, 64, out var joinEnter);
-            if (joinEnter) Session.Join(_joinTarget, _joinPass);
-            if (GUI.Button(new Rect(rx + rw - 74, ry, 74, 28), L.T("Paste", "Wklej"), _btn)) _joinTarget = U.PasteFromClipboard().Trim();
-            ry += 38;
-            GUI.Label(new Rect(rx, ry, rw, 20), L.T("Password (if the host set one)", "Hasło (jeśli host ustawił)"), _small); ry += 20;
-            _joinPass = Field("pass", new Rect(rx, ry, rw, 28), _joinPass, 32, out var passEnter, true);
-            if (passEnter) Session.Join(_joinTarget, _joinPass);
-            ry += 40;
-            if (GUI.Button(new Rect(rx, ry, rw, 38), L.T("Join", "Dołącz"), _btnOn)) Session.Join(_joinTarget, _joinPass);
+            GUI.Label(new Rect(rx + 170, ry + 3, rw - 170, 22), L.T("Or accept a Steam invite (Shift+Tab → friends → Join game).", "Albo przyjmij zaproszenie ze Steam (Shift+Tab → znajomi → Dołącz do gry)."), _small);
+        }
+
+        /// <summary>Join by a Steam Lobby ID, the host's SteamID or IP:port.</summary>
+        static void DrawDirectPanel(float x, float y, float w, float h)
+        {
+            float pw = Mathf.Min(w, 560), px = x + (w - pw) / 2;
+            GUI.Box(new Rect(px, y, pw, 210), "", _box);
+            float ry = y + 12, rx = px + 14, rw = pw - 28;
+            GUI.Label(new Rect(rx, ry, rw, 24), L.T("DIRECT JOIN", "DOŁĄCZ BEZPOŚREDNIO"), _label); ry += 32;
+            GUI.Label(new Rect(rx, ry, rw, 20), L.T("Steam Lobby ID, host SteamID or IP:port", "Lobby ID Steam, SteamID hosta albo IP:port"), _small); ry += 22;
+            _joinTarget = Field("join", new Rect(rx, ry, rw - 84, 30), _joinTarget, 64, out var enter);
+            if (GUI.Button(new Rect(rx + rw - 78, ry, 78, 30), L.T("Paste", "Wklej"), _btn)) _joinTarget = U.PasteFromClipboard().Trim();
             ry += 44;
-            GUI.Label(new Rect(rx, ry, rw, 40), L.T("Or accept a Steam invite (Shift+Tab → friends → Join game).", "Albo przyjmij zaproszenie ze Steam (Shift+Tab → znajomi → Dołącz do gry)."), _small);
+            if (GUI.Button(new Rect(rx, ry, rw, 40), L.T("Join", "Dołącz"), _btnOn) || enter) Session.Join(_joinTarget, "");
+            ry += 46;
+            GUI.Label(new Rect(rx, ry, rw, 40), L.T("If the game has a password, you will be asked for it.", "Jeśli gra ma hasło, zostaniesz o nie poproszony."), _small);
+        }
+
+        /// <summary>The lobby has a password: typed before joining.</summary>
+        static void DrawPasswordPrompt(float x, float y, float w, float h)
+        {
+            float pw = Mathf.Min(w, 480), px = x + (w - pw) / 2, ph = 190, py = y + Mathf.Max(0f, (h - ph) / 2 - 40);
+            GUI.Box(new Rect(px, py, pw, ph), "", _box);
+            float ry = py + 12, rx = px + 14, rw = pw - 28;
+            GUI.Label(new Rect(rx, ry, rw, 24), L.T("PASSWORD", "HASŁO"), _label); ry += 30;
+            GUI.Label(new Rect(rx, ry, rw, 22), L.T("This game is password protected:", "Ta gra jest zabezpieczona hasłem:"), _small); ry += 24;
+            _joinPass = Field("pass", new Rect(rx, ry, rw, 30), _joinPass, 32, out var enter, true);
+            ry += 44;
+            float bw = (rw - 10) / 2;
+            if (GUI.Button(new Rect(rx, ry, bw, 38), L.T("Cancel", "Anuluj"), _btn)) { _pwPrompt = false; Session.LastError = ""; }
+            if (GUI.Button(new Rect(rx + bw + 10, ry, bw, 38), L.T("Join", "Dołącz"), _btnOn) || enter)
+            {
+                _pwPrompt = false;
+                Session.Join(_pwTarget, _joinPass);
+            }
         }
 
         static void DrawConnected(float x, float y, float w, float h)
@@ -928,6 +1172,31 @@ namespace GrannyMP
             try { _mics = VoiceChat.Devices(); } catch (Exception e) { _mics = new(); Log.Warn("Microphone list: " + e.Message); }
         }
 
+        static Vector2 _setScroll; static float _setH = 1200f; static bool _barDrag;
+
+        /// <summary>A vertical scroll bar drawn by hand: the thumb, a click or a drag on the track.</summary>
+        static void ScrollBar(Rect track, float view, ref float scroll, float content)
+        {
+            if (content <= view + 1f) { _barDrag = false; return; }
+            float thumbH = Mathf.Max(30f, track.height * view / content), max = content - view;
+            float ty = track.y + (track.height - thumbH) * Mathf.Clamp01(scroll / max);
+            var gc = GUI.color;
+            GUI.color = new Color(1f, 1f, 1f, 0.08f); GUI.DrawTexture(track, _white);
+            GUI.color = new Color(0.85f, 0.85f, 0.9f, _barDrag ? 0.7f : 0.4f); GUI.DrawTexture(new Rect(track.x, ty, track.width, thumbH), _white);
+            GUI.color = gc;
+            var e = Event.current;
+            if (e == null) return;
+            var hit = new Rect(track.x - 6, track.y, track.width + 12, track.height);
+            if (e.type == EventType.MouseDown && e.button == 0 && hit.Contains(e.mousePosition)) { _barDrag = true; e.Use(); }
+            else if (e.type == EventType.MouseUp) _barDrag = false;
+            if (_barDrag && (e.type == EventType.MouseDrag || e.type == EventType.MouseDown))
+            {
+                float t = Mathf.Clamp01((e.mousePosition.y - track.y - thumbH / 2f) / Mathf.Max(1f, track.height - thumbH));
+                scroll = t * max;
+                e.Use();
+            }
+        }
+
         static void CloseSettings() { _settings = false; _capture = null; _drag = null; VoiceChat.Testing = false; if (_characters) CloseCharacters(); }
 
         static Texture2D _gear;
@@ -975,7 +1244,7 @@ namespace GrannyMP
         }
 
         /// <summary>Key binding row: click, then press a key (or a middle / side mouse button). Esc cancels, Backspace clears.</summary>
-        static void KeyRow(float x, ref float y, float w, string label, BepInEx.Configuration.ConfigEntry<KeyCode> entry, bool canClear = false)
+        static void KeyRow(float x, ref float y, float w, string label, BepInEx.Configuration.ConfigEntry<KeyCode> entry, bool canClear = false, bool anyMouse = false)
         {
             GUI.Label(new Rect(x, y + 4, w - 170, 22), label, _small);
             bool capturing = _capture == entry;
@@ -990,7 +1259,7 @@ namespace GrannyMP
                     else { entry.Value = e.keyCode; _capture = null; }
                     e.Use();
                 }
-                else if (e != null && e.type == EventType.MouseDown && e.button >= 2 && e.button <= 6)
+                else if (e != null && e.type == EventType.MouseDown && e.button >= (anyMouse ? 0 : 2) && e.button <= 6)
                 {
                     entry.Value = KeyCode.Mouse0 + e.button; _capture = null; e.Use();
                 }
@@ -1141,7 +1410,7 @@ namespace GrannyMP
                 if (Array.IndexOf(Display.Modes, _pendMode) < 0) _pendMode = Display.Borderless;
             }
             bool ok = Display.Available;
-            float bw = 92, vw = lw - 150 - bw - 8; // < value > | Apply
+            float vw = lw - 150; // < value >, Apply below
             GUI.enabled = ok;
             GUI.Label(new Rect(lx, ly + 4, 150, 22), L.T("Resolution:", "Rozdzielczość:"), _small);
             {
@@ -1161,8 +1430,9 @@ namespace GrannyMP
                 GUI.Label(new Rect(lx + 182, ly + 4, vw - 64, 22), Display.ModeName(_pendMode), _center);
             }
             bool changed = _pendRes != Display.Current || _pendMode != Display.CurrentMode;
+            ly += 32;
             GUI.enabled = ok && changed;
-            if (GUI.Button(new Rect(lx + lw - bw, ly - 32, bw, 58), L.T("Apply", "Zastosuj"), changed ? _btnOn : _btn))
+            if (GUI.Button(new Rect(lx + 150, ly, vw, 26), L.T("Apply", "Zastosuj"), changed ? _btnOn : _btn))
                 Display.Apply(_pendRes, _pendMode, true);
             GUI.enabled = true;
             ly += 32;
@@ -1171,11 +1441,28 @@ namespace GrannyMP
         static void DrawSettings(float x, float y, float w, float h)
         {
             if (_characters) { DrawCharacters(x, y, w, h); return; }
-            float col = (w - 20) / 2;
-            // ---- left: general + controls ----
-            GUI.Box(new Rect(x, y, col, h - 44), "", _box);
-            float lx = x + 12, ly = y + 10, lw = col - 24;
+            // one panel, scrolled with the mouse wheel / the bar on the right
+            GUI.Box(new Rect(x, y, w, h - 44), "", _box);
+            float cw = w - 22;
+            // GUI.BeginScrollView is stripped from this game: the view is clipped by hand (GUIClip, what it uses inside)
+            var clip = new Rect(x + 2, y + 2, w - 18, h - 48);
+            float maxScroll = Mathf.Max(0f, _setH - clip.height);
+            var ev = Event.current;
+            if (ev != null && ev.type == EventType.ScrollWheel && new Rect(x, y, w, h - 44).Contains(ev.mousePosition))
+            { _setScroll.y += ev.delta.y * 30f; ev.Use(); }
+            ScrollBar(new Rect(x + w - 14, y + 4, 10, h - 52), clip.height, ref _setScroll.y, _setH);
+            _setScroll.y = Mathf.Clamp(_setScroll.y, 0f, maxScroll);
+            UnityEngine.GUIClip.Internal_Push(clip, new Vector2(0f, -Mathf.Round(_setScroll.y)), Vector2.zero, false);
+            try
+            {
+            float lw = Mathf.Min(cw - 28, 680), lx = (cw - lw) / 2f, ly = 10;
             GUI.Label(new Rect(lx, ly, lw, 24), L.T("SETTINGS", "USTAWIENIA"), _label); ly += 30;
+            // your name (in the lobby and above your character)
+            GUI.Label(new Rect(lx, ly + 4, 150, 22), L.T("Your name:", "Twój nick:"), _small);
+            var nn = Field("name", new Rect(lx + 150, ly, lw - 150, 28), _name, 24, out _);
+            if (nn != _name) { _name = nn; Cfg.PlayerName.Value = nn; }
+            if (Session.Active) GUI.Label(new Rect(lx + 150, ly + 30, lw - 150, 20), L.T("Used from the next lobby.", "Zmieni się od następnego lobby."), _small);
+            ly += Session.Active ? 54 : 36;
             GUI.Label(new Rect(lx, ly + 6, 150, 22), L.T("Language:", "Język:"), _small);
             if (FlagButton(new Rect(lx + 150, ly, 48, 30), FlagUK(), !L.PL)) Cfg.Lang.Value = Language.English;
             if (FlagButton(new Rect(lx + 206, ly, 48, 30), FlagPL(), L.PL)) Cfg.Lang.Value = Language.Polish;
@@ -1183,7 +1470,7 @@ namespace GrannyMP
             // interface size: Auto (from the screen resolution) or a fixed size
             GUI.Label(new Rect(lx, ly + 4, 150, 22), L.T("Interface size:", "Rozmiar interfejsu:"), _small);
             {
-                float[] sizes = { 0f, 1f, 1.25f, 1.5f, 2f, 2.5f, 3f };
+                float[] sizes = { 0f, 0.75f, 1f, 1.25f, 1.5f, 2f, 2.5f, 3f };
                 int at = 0; for (int i = 1; i < sizes.Length; i++) if (Mathf.Abs(Cfg.UiScale.Value - sizes[i]) < 0.01f) at = i;
                 int dir = 0;
                 if (GUI.Button(new Rect(lx + 150, ly, 28, 26), "<", _btn)) dir = -1;
@@ -1228,11 +1515,16 @@ namespace GrannyMP
             KeyRow(lx, ref ly, lw, Cfg.VoiceModeCfg.Value == VoiceMode.Toggle ? L.T("Microphone on/off", "Mikrofon wł./wył.") : L.T("Push to talk", "Naciśnij, aby mówić"), Cfg.VoiceKey);
             GUI.Label(new Rect(lx, ly + 2, lw, 40), L.T("Click a key, then press the new one (middle / side mouse buttons work too). Esc cancels.",
                 "Kliknij klawisz i naciśnij nowy (działają też środkowy / boczne przyciski myszy). Esc anuluje."), _small);
+            ly += 44;
+            GUI.Label(new Rect(lx, ly, lw, 24), L.T("PvP – PLAYING GRANNY", "PvP – GRA JAKO GRANNY"), _label); ly += 28;
+            KeyRow(lx, ref ly, lw, L.T("Grab a survivor", "Złap ocalałego"), Cfg.PvpGrabKey, false, true);
+            KeyRow(lx, ref ly, lw, L.T("Say a line / laugh", "Mów / śmiej się"), Cfg.PvpVoiceKey, false, true);
+            KeyRow(lx, ref ly, lw, L.T("Put a bear trap down", "Postaw pułapkę"), Cfg.PvpTrapKey, false, true);
+            GUI.Label(new Rect(lx, ly + 2, lw, 22), L.T("Here the left / right mouse button can be chosen too.", "Tu można też wybrać lewy / prawy przycisk myszy."), _small);
+            ly += 34;
 
-            // ---- right: voice chat ----
-            float rx = x + col + 20;
-            GUI.Box(new Rect(rx, y, col, h - 44), "", _box);
-            rx += 12; float ry = y + 10, rw = col - 24;
+            // ---- voice chat ----
+            float rx = lx, ry = ly, rw = lw;
             GUI.Label(new Rect(rx, ry, rw, 24), L.T("VOICE CHAT", "CZAT GŁOSOWY"), _label); ry += 30;
             var en = Toggle(new Rect(rx, ry, rw, 26), Cfg.VoiceEnabled.Value, L.T("Voice chat enabled", "Czat głosowy włączony"));
             if (en != Cfg.VoiceEnabled.Value) { Cfg.VoiceEnabled.Value = en; if (!en) VoiceChat.Testing = false; }
@@ -1286,6 +1578,9 @@ namespace GrannyMP
             if (VoiceChat.Error != null) { var c = _small.normal.textColor; _small.normal.textColor = new Color(1f, 0.5f, 0.45f); GUI.Label(new Rect(rx, ry, rw, 54), info, _small); _small.normal.textColor = c; }
             else GUI.Label(new Rect(rx, ry, rw, 54), info, _small);
             GUI.enabled = true;
+            _setH = ry + 64;
+            }
+            finally { UnityEngine.GUIClip.Internal_Pop(); }
 
             if (GUI.Button(new Rect(x + w - 160, y + h - 36, 160, 32), L.T("Back", "Wróć"), _btn)) CloseSettings();
             if (GUI.Button(new Rect(x, y + h - 36, 160, 32), L.T("Refresh devices", "Odśwież urządzenia"), _btn)) OpenSettings();
@@ -1305,6 +1600,9 @@ namespace GrannyMP
         static readonly HashSet<ulong> Dev = new() { 76561198966183975UL, 76561198328319838UL };
         static readonly HashSet<ulong> Helper = new() { 76561198312981915UL };
         static readonly Color DevColor = new Color(1f, 0.85f, 0.1f), HelperColor = new Color(0.3f, 0.95f, 0.4f);
+
+        /// <summary>This copy of the game runs on a DEV's Steam account.</summary>
+        public static bool LocalIsDev => SteamNative.Ready && Dev.Contains(SteamNative.MySteamId);
 
         public static bool Of(byte id, out string badge, out Color color)
         {

@@ -37,7 +37,7 @@ namespace GrannyMP
         public static ConfigEntry<float> PvpGrannySpeed;
         public static ConfigEntry<bool> PvpNightVision, PvpOwnBody;
         public static ConfigEntry<float> PvpCameraHeight, ModelSize;
-        public static ConfigEntry<KeyCode> PvpLaughKey, PvpTrapKey;
+        public static ConfigEntry<KeyCode> PvpLaughKey, PvpTrapKey, PvpGrabKey, PvpVoiceKey;
         public static ConfigEntry<bool> SpeedCheck;
         public static ConfigEntry<float> MaxSpeed;
         public static ConfigEntry<float> ProposeRadius;
@@ -115,6 +115,8 @@ namespace GrannyMP
             PvpNightVision = c.Bind("PvP", "GrannyNightVision", true, "PvP: Granny sees in the dark – a soft light around the Granny player's eyes (only on their screen).");
             PvpLaughKey = c.Bind("PvP", "LaughKey", KeyCode.None, "Not used any more – the right mouse button makes Granny say a line or laugh.");
             PvpTrapKey = c.Bind("PvP", "TrapKey", KeyCode.B, "PvP, playing Granny: put a bear trap down.");
+            PvpGrabKey = c.Bind("PvP", "GrabKey", KeyCode.Mouse0, "PvP, playing Granny: grab a survivor (or swing at the air).");
+            PvpVoiceKey = c.Bind("PvP", "VoiceKey", KeyCode.Mouse1, "PvP, playing Granny: say one of her lines or laugh.");
 
             VoiceEnabled = c.Bind("Voice", "Enabled", true, "Proximity voice chat (own audio, works with Steam and Direct IP).");
             VoiceModeCfg = c.Bind("Voice", "Mode", VoiceMode.PushToTalk, "PushToTalk = hold the key, Toggle = press the key to switch the microphone on/off, Always = voice activation (sensitivity: MicThreshold).");

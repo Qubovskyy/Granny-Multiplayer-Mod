@@ -46,6 +46,10 @@ namespace GrannyMP
                 SprayFx.Update();
                 EscapeSync.Update();
                 FuelSync.Update();
+                SaunaSync.Update();
+                GrannyEyes.Update();
+                LandSound.Update();
+                NoticeSync.Update();
                 DebugMenu.Update();
                 Spectator.Update();
                 VoiceChat.Update();

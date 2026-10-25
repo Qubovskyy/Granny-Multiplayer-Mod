@@ -31,8 +31,8 @@
     <Reference Include="$(GameDir)\BepInEx\core\0Harmony.dll" Private="false" />
     <Reference Include="$(GameDir)\BepInEx\interop\*.dll" Private="false" />
   </ItemGroup>
-  <!-- the icon next to the DLL -->
   <ItemGroup>
-    <None Include="assets\beartrap-icon.png" CopyToOutputDirectory="PreserveNewest" Link="beartrap-icon.png" />
+    <!-- the pictures are built into GrannyMP.dll (Png.Asset); a file of the same name next to the DLL replaces one -->
+    <EmbeddedResource Include="assets\*.png" LogicalName="GrannyMP.assets.%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

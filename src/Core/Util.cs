@@ -196,6 +196,14 @@ namespace GrannyMP
             catch { return false; }
         }
 
+        /// <summary>A key or a mouse button (Mouse0–Mouse2) pressed this frame.</summary>
+        public static bool Pressed(KeyCode k)
+        {
+            if (k == KeyCode.None) return false;
+            if (k >= KeyCode.Mouse0 && k <= KeyCode.Mouse2) return MouseDown(k - KeyCode.Mouse0);
+            return KeyDown(k);
+        }
+
         /// <summary>Mouse button pressed this frame (0 = left, 1 = right).</summary>
         public static bool MouseDown(int b)
         {

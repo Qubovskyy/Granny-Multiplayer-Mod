@@ -131,10 +131,10 @@ namespace GrannyMP
         static readonly HashSet<uint> _registeredIds = new();
         static int _tick, _rolling;
         static uint _nextSpawnId = SpawnBit | 1;
-        static readonly HashSet<IntPtr> _knownRoots = new();
+        static readonly HashSet<int> _knownRoots = new(); // GetInstanceID: a pointer is reused by the next clone once the old one is gone
         // clones the client's game made while it could not propose them (the player already counts as caught when the
         // game drops the held item during the catch) – proposed when the spectator drop window opens
-        static readonly Dictionary<IntPtr, (GameObject go, float at)> _heldBackRoots = new();
+        static readonly Dictionary<int, (GameObject go, float at)> _heldBackRoots = new();
         static float _lastSpawnScan;
         static Dictionary<string, GameObject> _prefabCache;
         public static bool Applying;              // true while applying network state (prevents echoes)
@@ -217,7 +217,7 @@ namespace GrannyMP
             var paths = new Dictionary<IntPtr, string>();
             foreach (var root in scene.GetRootGameObjects())
             {
-                _knownRoots.Add(root.Pointer);
+                _knownRoots.Add(root.GetInstanceID());
                 Walk(root.transform, "", paths, all);
             }
             GameRefs.Refresh();
@@ -1362,6 +1362,22 @@ namespace GrannyMP
             return best;
         }
 
+        /// <summary>Client: this player's game has just hit Granny (an arrow, a dart, the shotgun, the spray).</summary>
+        static float GrannyHitAt = -10f;
+        /// <summary>What the game leaves when Granny is hit – the host's game makes them and sends them to everybody.</summary>
+        static readonly HashSet<string> HitLeftovers = new() { "StunnSyringe", "GrannyRagdoll" };
+
+        // her hit flags on this copy may stay on (her AI is the host's): only the moment one comes on counts
+        static bool _hitFlag;
+        static bool GrannyJustHit()
+        {
+            bool hit = false;
+            try { var g = GameRefs.Granny; hit = U.Alive(g) && (g.hitByArrow || g.hitByGun); } catch { }
+            if (hit && !_hitFlag) GrannyHitAt = Time.unscaledTime;
+            _hitFlag = hit;
+            return Time.unscaledTime - GrannyHitAt < 1.5f;
+        }
+
         static bool ProposeAiFields(NetObj o)
         {
             bool any = false;
@@ -1373,6 +1389,7 @@ namespace GrannyMP
                 int v; try { v = b.Read(); } catch { continue; }
                 if (StateBinding.Equal(b.Kind, v, o.AStates[i])) continue;
                 o.AStates[i] = v; o.StatesDirty |= 1UL << i; any = true;
+                if (b.Name.IndexOf(".hitBy", StringComparison.Ordinal) >= 0) GrannyHitAt = Time.unscaledTime;
                 if (Cfg.DebugLog.Value) Log.Debug($"AI field -> host: {b.Name}");
             }
             return any;
@@ -1682,6 +1699,7 @@ namespace GrannyMP
             var v = Vector3.zero; try { if (U.Alive(o.Rb)) v = o.Rb.linearVelocity; } catch { }
             w.Vec3(v);
             w.Byte((byte)(o.Loaded + 1));
+            w.Vec3(o.Tr.lossyScale);
         }
 
         /// <summary>Host: new root clones created by the host's game (dropped items, Granny's bear trap, ragdolls).</summary>
@@ -1692,8 +1710,8 @@ namespace GrannyMP
             var scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
             foreach (var root in scene.GetRootGameObjects())
             {
-                if (_knownRoots.Contains(root.Pointer)) continue;
-                _knownRoots.Add(root.Pointer);
+                if (_knownRoots.Contains(root.GetInstanceID())) continue;
+                _knownRoots.Add(root.GetInstanceID());
                 if (!root.name.EndsWith("(Clone)", StringComparison.Ordinal)) continue;
                 if (U.IsUnder(root.transform, GameRefs.PlayerRoot) || root.GetComponent<Camera>() != null) continue;
                 if (IsPersonal(root.transform) || Unsynced(BaseName(root.name))) continue;
@@ -1710,6 +1728,7 @@ namespace GrannyMP
         /// <summary>Client: a clone created by the local game near the local player (= this player dropped an item).</summary>
         static void ScanClientSpawns(Vector3 me, float radius, bool canPropose)
         {
+            GrannyJustHit();
             if (Time.unscaledTime - _lastSpawnScan < 0.2f) return;
             _lastSpawnScan = Time.unscaledTime;
             var scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
@@ -1730,17 +1749,25 @@ namespace GrannyMP
             }
             foreach (var root in roots)
             {
-                if (!U.Alive(root) || _knownRoots.Contains(root.Pointer)) continue;
-                _knownRoots.Add(root.Pointer);
+                if (!U.Alive(root) || _knownRoots.Contains(root.GetInstanceID())) continue;
+                _knownRoots.Add(root.GetInstanceID());
                 if (!root.name.EndsWith("(Clone)", StringComparison.Ordinal)) continue;
                 if (!(canPropose || dayEnd))
                 {
                     if (!root.name.StartsWith("GrannyMP_", StringComparison.Ordinal) && U.Dist(root.transform.position, me) <= radius + 2f)
-                        _heldBackRoots[root.Pointer] = (root, Time.unscaledTime);
+                        _heldBackRoots[root.GetInstanceID()] = (root, Time.unscaledTime);
                     continue;
                 }
                 if (root.name.StartsWith("GrannyMP_", StringComparison.Ordinal)) continue;
                 if (IsPersonal(root.transform) || Unsynced(BaseName(root.name))) continue;
+                // an arrow / dart that hit Granny here: this game turned it into a lying arrow (and her ragdoll) – the
+                // host's game does the same and sends it, a local one was a second arrow
+                if (HitLeftovers.Contains(BaseName(root.name)) && (Time.unscaledTime - GrannyHitAt < 1.5f || GrannyJustHit()))
+                {
+                    UnityEngine.Object.Destroy(root);
+                    Log.Debug($"{root.name} after hitting Granny – the host's copy is used");
+                    continue;
+                }
                 if (!dayEnd && U.Dist(root.transform.position, me) > radius) continue;
                 if (root.GetComponent<Rigidbody>() == null && root.GetComponent<Collider>() == null) continue; // effects / decals
                 var o = MakeSpawnObj(_nextTempId++, root, BaseName(root.name));
@@ -1751,6 +1778,7 @@ namespace GrannyMP
                 var w = Session.W(Msg.SpawnReq);
                 w.UInt(o.Id); w.Str(o.PrefabName); w.Vec3(root.transform.position); w.Quat(root.transform.rotation); w.Bool(root.activeSelf);
                 w.Byte((byte)(o.Loaded + 1)); // a dropped weapon: loaded or not
+                w.Vec3(root.transform.lossyScale);
                 Session.SendToHost(w, true);
                 Log.Debug("Dropped item spawn request: " + root.name + (o.Loaded >= 0 ? (o.Loaded == 1 ? " loaded" : " empty") : ""));
             }
@@ -1797,7 +1825,7 @@ namespace GrannyMP
             if (U.Alive(_templateRoot)) UnityEngine.Object.Destroy(_templateRoot);
             _templateRoot = new GameObject("GrannyMP_Templates");
             _templateRoot.SetActive(false);
-            _knownRoots.Add(_templateRoot.Pointer);
+            _knownRoots.Add(_templateRoot.GetInstanceID());
             int n = 0;
             foreach (var o in _list)
             {
@@ -1810,11 +1838,19 @@ namespace GrannyMP
                     var copy = UnityEngine.Object.Instantiate((UnityEngine.Object)o.Go, _templateRoot.transform)?.TryCast<GameObject>();
                     if (copy == null) continue;
                     copy.name = name;
+                    copy.transform.localScale = o.Go.transform.lossyScale; // the template root has scale 1
                     _templates[name] = copy; n++;
                 }
                 catch { }
             }
             Log.Debug($"Spawn templates: {n}");
+        }
+
+        /// <summary>The size the clone has in the game that made it (sent with the spawn).</summary>
+        static void SetScale(GameObject go, Vector3 scale)
+        {
+            if (scale.x <= 0.0001f || scale.y <= 0.0001f || scale.z <= 0.0001f || scale.sqrMagnitude > 1e6f) return;
+            try { if ((go.transform.localScale - scale).sqrMagnitude > 1e-6f) go.transform.localScale = scale; } catch { }
         }
 
         static GameObject InstantiateByName(string name, Vector3 pos, Quaternion rot, bool active)
@@ -1824,6 +1860,9 @@ namespace GrannyMP
             var go = UnityEngine.Object.Instantiate((UnityEngine.Object)prefab, pos, rot)?.TryCast<GameObject>();
             if (go == null) return null;
             if (go.transform.parent != null) go.transform.SetParent(null, true);
+            // a scene object under a scaled parent: the clone at the root gets its size in the world, not its local scale
+            // (the crossbow's arrow lies under a parent scaled 0.01 – the copy was a hundred times too big)
+            try { if (prefab.scene.IsValid()) go.transform.localScale = prefab.transform.lossyScale; } catch { }
             go.name = name + "(Clone)";
             // a copy of somebody else's object never films or listens for this player (e.g. a dead player's falling camera)
             try
@@ -1833,7 +1872,7 @@ namespace GrannyMP
             }
             catch (Exception e) { Log.Debug("spawn cameras: " + e.Message); }
             go.SetActive(active);
-            _knownRoots.Add(go.Pointer);
+            _knownRoots.Add(go.GetInstanceID());
             return go;
         }
 
@@ -2154,6 +2193,7 @@ namespace GrannyMP
             var id = r.UInt(); var name = r.Str(); var pos = r.Vec3(); var rot = r.Quat(); var act = r.Bool();
             var owner = r.Byte(); var origin = r.Byte(); var tempId = r.UInt(); var vel = r.Vec3();
             var loaded = (sbyte)(r.Byte() - 1);
+            var scale = r.HasData ? r.Vec3() : Vector3.zero;
             if (Objs.ContainsKey(id)) return;
             // my own dropped item – bind the local clone to the id assigned by the host
             if (origin == Session.LocalId && _pendingSpawns.TryGetValue(tempId, out var mine))
@@ -2167,6 +2207,7 @@ namespace GrannyMP
             }
             var go = InstantiateByName(name, pos, rot, act);
             if (go == null) { Log.Warn($"Spawn {name} -> {id}: no prefab/template found"); return; }
+            SetScale(go, scale);
             var o = MakeSpawnObj(id, go, name);
             o.Loaded = loaded;
             AddObj(o);
@@ -2181,9 +2222,11 @@ namespace GrannyMP
             if (!Session.IsHost || from == null || !Registered) return;
             var tempId = r.UInt(); var name = r.Str(); var pos = r.Vec3(); var rot = r.Quat(); var act = r.Bool();
             var loaded = (sbyte)(r.Byte() - 1);
+            var scale = r.HasData ? r.Vec3() : Vector3.zero;
             if (!GameFlow.InTransition && !PlayerNear(from, pos, 4f)) return; // at the end of the day items are dropped where the game puts them
             var go = InstantiateByName(name, pos, rot, act);
             if (go == null) return;
+            SetScale(go, scale);
             var o = MakeSpawnObj(_nextSpawnId++, go, name);
             o.Loaded = Weapons.IsWeapon(name) ? loaded : (sbyte)-1;
             AddObj(o);

@@ -361,7 +361,7 @@ namespace GrannyMP
         static bool HostOnlyTriggerPrefix(Collider __0)
         {
             if (ClientInGame) return false;
-            if (LocalGrannyCollider(__0)) return false;
+            if (LocalGrannyCollider(__0) && !Events.Forwarding) return false;
             if (Session.Active && PlayerSync.IsProxy(__0) && !Events.Forwarding) return false;
             return true;
         }
@@ -377,7 +377,8 @@ namespace GrannyMP
                 return !sent;
             }
             if (PlayerSync.IsProxy(other) && !Events.Forwarding) return false;
-            if (LocalGrannyCollider(other)) return false;
+            // the host's own player is Granny – but while it stands in for a survivor (a forwarded trigger) it is that survivor
+            if (LocalGrannyCollider(other) && !Events.Forwarding) return false;
             return true;
         }
 

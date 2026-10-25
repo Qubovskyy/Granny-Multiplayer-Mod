@@ -56,6 +56,10 @@ namespace GrannyMP
         public static byte GrannyChoice = 255;
         /// <summary>Host option: the players cannot use their own field of view.</summary>
         public static bool LockFov;
+        // set by the host in the server configuration: the PvP Granny player's speed factor, the voice chat's range (m)
+        public static float GrannySpeed = 1f, VoiceRange = 20f;
+        public static float GrannySpeedNow => Active ? GrannySpeed : Cfg.PvpGrannySpeed.Value;
+        public static float VoiceRangeNow => Active ? VoiceRange : Cfg.VoiceRange.Value;
         /// <summary>Host's debug panel: nobody can be caught or die.</summary>
         public static bool GodMode;
         public static bool HostInGame;      // the host is in the game scene
@@ -77,6 +81,7 @@ namespace GrannyMP
         static readonly byte[] _callBuf = new byte[64];
         static bool _handlersRegistered;
         static string _pendingPassword = "";
+        public static string LastJoinTarget = "";
 
         /// <summary>A player's colour (name tags, chat, lists) – the same white for everybody.</summary>
         public static Color ColorOf(byte id) => Color.white;
@@ -104,7 +109,7 @@ namespace GrannyMP
             On(Msg.Welcome, HandleWelcome);
             On(Msg.Deny, (p, r) =>
             {
-                var why = r.Str(); var target = SteamLobby != 0 ? SteamLobby.ToString() : "";
+                var why = r.Str(); var target = SteamLobby != 0 ? SteamLobby.ToString() : LastJoinTarget;
                 LastError = L.T("Denied: ", "Odmowa: ") + L.Show(why.StartsWith("PASSWORD") ? why.Substring(8) : why); Shutdown(LastError);
                 if (why.StartsWith("PASSWORD")) LobbyUI.OpenWithJoin(target, L.T("Wrong or missing password – type it and click Join.", "Złe lub brak hasła – wpisz hasło i kliknij Dołącz."));
             });
@@ -125,6 +130,8 @@ namespace GrannyMP
             FreezeTrapSync.RegisterHandlers();
             EscapeSync.RegisterHandlers();
             FuelSync.RegisterHandlers();
+            GrannyEyes.RegisterHandlers();
+            NoticeSync.RegisterHandlers();
             PlayerSync.RegisterHandlers();
             Pvp.RegisterHandlers();
         }
@@ -157,7 +164,7 @@ namespace GrannyMP
             Players.Clear(); _connToId.Clear(); _pendingConns.Clear();
             Mode = Cfg.DefaultMode.Value; JoinInProgress = Cfg.AllowJoinInProgress.Value; SpotCatchAll = Cfg.SpotCatchAll.Value; SpotSingle = Cfg.SpotSingle.Value; GrannyId = 255;
             PvpOn = Mode == CoopMode.PvP; if (PvpOn) Mode = CoopMode.LastSurvivor;
-            GrannyChoice = 255; LockFov = Cfg.LockFov.Value;
+            GrannyChoice = 255; LockFov = Cfg.LockFov.Value; GrannySpeed = Cfg.PvpGrannySpeed.Value; VoiceRange = Cfg.VoiceRange.Value;
             Players[0] = new NetPlayer { Id = 0, Name = LocalName, SteamId = SteamNative.Ready ? SteamNative.MySteamId : 0, Ready = true, Conn = -1, Model = Cfg.Character.Value };
             LastError = "";
             Status = "Host: " + t.Kind;
@@ -170,7 +177,7 @@ namespace GrannyMP
         {
             if (State != SessionState.Offline) return;
             EnsureHandlers();
-            LastError = ""; _pendingPassword = password ?? "";
+            LastError = ""; _pendingPassword = password ?? ""; LastJoinTarget = target ?? "";
             target = (target ?? "").Trim();
             if (ulong.TryParse(target, out var id) && id > 0xFFFFFFFFUL)
             {
@@ -273,7 +280,27 @@ namespace GrannyMP
                     }
                 }
             }
-            else if (now - _lastHostRecv > 20f) { LastError = L.T("Lost connection to the host.", "Utracono połączenie z hostem."); Shutdown(LastError); }
+            else
+            {
+                if (now - _lastHostRecv > 12f) { LastError = L.T("Lost connection to the host.", "Utracono połączenie z hostem."); Shutdown(LastError); return; }
+                // Steam: the host closes the P2P connection right after its goodbye, which then often never arrives –
+                // the host gone from the Steam lobby is the same as the goodbye
+                if (SteamLobby != 0 && now - _lastProbe > 2f)
+                {
+                    _lastProbe = now;
+                    try
+                    {
+                        ulong hostSid = Players.TryGetValue(0, out var hp) ? hp.SteamId : 0;
+                        if (hostSid != 0)
+                        {
+                            bool there = false; int n = SteamNative.LobbyMemberCount(SteamLobby);
+                            for (int i = 0; i < n && !there; i++) there = SteamNative.LobbyMember(SteamLobby, i) == hostSid;
+                            if (n > 0 && !there) { Shutdown(L.T("The host closed the lobby", "Host zamknął lobby")); return; }
+                        }
+                    }
+                    catch (Exception e) { Log.Debug("lobby check: " + e.Message); }
+                }
+            }
 
             Notices.RemoveAll(n => n.until < now);
         }
@@ -462,6 +489,7 @@ namespace GrannyMP
             Xmit(conn, w.Buf, w.Len, true);
             BroadcastPlayerList();
             Notify2($"{name} joined the game", $"{name} dołączył(a) do gry", true);
+            SystemChat($"{name} joined the game", $"{name} dołączył(a) do gry");
             Log.Info($"Player {name} (id {id}) joined");
             GameFlow.OnPlayerJoined(p);
         }
@@ -495,12 +523,13 @@ namespace GrannyMP
         static void WriteSettings(NetWriter w)
         {
             w.Byte((byte)Mode); w.Bool(JoinInProgress); w.Byte((byte)Cfg.MaxPlayers.Value); w.Bool(SpotCatchAll); w.Bool(SpotSingle); w.Byte(GrannyId);
-            w.Bool(PvpOn); w.Byte(GrannyChoice); w.Bool(LockFov); w.Bool(GodMode);
+            w.Bool(PvpOn); w.Byte(GrannyChoice); w.Bool(LockFov); w.Bool(GodMode); w.Float(GrannySpeed); w.Float(VoiceRange);
         }
         static void ReadSettings(NetReader r)
         {
             Mode = (CoopMode)r.Byte(); JoinInProgress = r.Bool(); r.Byte(); SpotCatchAll = r.Bool(); SpotSingle = r.Bool(); GrannyId = r.Byte();
             PvpOn = r.Bool(); GrannyChoice = r.Byte(); LockFov = r.Bool(); GodMode = r.Bool();
+            if (r.HasData) { GrannySpeed = Mathf.Clamp(r.Float(), 0.5f, 2f); VoiceRange = Mathf.Clamp(r.Float(), 3f, 100f); }
         }
 
         /// <summary>Caught players spectate until the end of the day ("last survivor", also in PvP).</summary>
@@ -577,6 +606,7 @@ namespace GrannyMP
             World.OnPlayerLeft(id);
             GameFlow.OnPlayerLeft(p);
             Notify2($"{p.Name} left the game ({L.Show(reason)})", $"{p.Name} opuścił(a) grę ({L.Show(reason)})", true);
+            SystemChat($"{p.Name} left the game", $"{p.Name} opuścił(a) grę");
             BroadcastPlayerList();
         }
 
@@ -597,8 +627,25 @@ namespace GrannyMP
             AddChat(id, text);
         }
 
+        const byte SystemId = 254;
+
+        /// <summary>Host: a line from the game itself in everybody's chat (who joined / left), in each player's language.</summary>
+        static void SystemChat(string en, string pl)
+        {
+            if (!IsHost) return;
+            var pair = L.Pair(en, pl);
+            AddChat(SystemId, pair);
+            var w = W(Msg.Chat); w.Byte(SystemId); w.Str(pair); Broadcast(w, true);
+        }
+
         static void AddChat(byte id, string text)
         {
+            if (id == SystemId)
+            {
+                ChatLog.Add((Time.realtimeSinceStartup, "* " + L.Show(text), new Color(0.75f, 0.75f, 0.7f)));
+                if (ChatLog.Count > 60) ChatLog.RemoveAt(0);
+                return;
+            }
             var name = Players.TryGetValue(id, out var p) ? p.Name : "?";
             ChatLog.Add((Time.realtimeSinceStartup, name + ": " + text, ColorOf(id)));
             if (ChatLog.Count > 60) ChatLog.RemoveAt(0);

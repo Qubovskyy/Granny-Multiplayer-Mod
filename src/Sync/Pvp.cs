@@ -40,9 +40,11 @@ namespace GrannyMP
             _frozen = false; _stunned = false; _stateAt = 0; _sentFlags = 255; _farSince = 0; _localNextGrab = 0; _localNextVoice = 0; _localNextTrap = 0;
             _hidden.Clear(); _hiddenSet.Clear(); _nextHideScan = 0; _ignored.Clear(); _ignoreCc = IntPtr.Zero; _nextIgnore = 0; _speedFps = IntPtr.Zero; _wasFrozen = false;
             _woke = false; _controlSince = 0; _nightLight = null; _stunSince = 0; _stunIgnored = false; _nextStatus = 0; _frozenWhy = "";
-            _respawnAt = 0; _chaseSpeed = 0; _appliedSpeed = -1; _loggedSpeed = -1; _hiddenUi.Clear(); _nextUiScan = 0;
+            _respawnAt = 0; _dayStartAt = 0; _titleSeen = false; _chaseSpeed = 0; _appliedSpeed = -1; _loggedSpeed = -1; _hiddenUi.Clear(); _nextUiScan = 0;
             _head = null; _eyes = null; _eyeOffset = -1f; _camSet = false; _nextBodyScan = 0;
             _tableHidden.Clear(); _tableLights.Clear(); _nextTableScan = 0;
+            RevealUntil.Clear(); _noiseSent.Clear(); _wasHearPlayer = false;
+            _npcDoors = null; _nextDoorScan = 0; _lookDoor = null; _hasNav = false;
         }
 
         // ================= choosing the Granny player (host) =================
@@ -93,6 +95,8 @@ namespace GrannyMP
         //   1 G->H  grab: byte target (255 = nobody in reach – Granny swings at the air)
         //   2 G->H  voice: byte 0 = a line, 1 = laugh
         //   3 G->H  put a bear trap down
+        //   5 S->H  a survivor's own game made Granny hear something (an item it threw, a sound it ran itself)
+        //   4 H->G  a survivor made a noise: byte player – the Granny player sees them through the walls for a moment
         public static void RegisterHandlers() => Session.On(Msg.Pvp, Handle);
 
         static void Handle(NetPlayer from, NetReader r)
@@ -107,6 +111,8 @@ namespace GrannyMP
                 _frozen = fr; _stunned = (f & 2) != 0; _stateAt = Time.unscaledTime;
                 return;
             }
+            if (kind == 4) { if (Session.IsClient && LocalIsGranny) Reveal(r.Byte()); return; }
+            if (kind == 5) { if (Session.IsHost && from != null && !IsGranny(from.Id)) HostNoiseBy(from.Id); return; }
             if (!Session.IsHost || from == null || !IsGranny(from.Id) || !GameRefs.InGameScene) return;
             switch (kind)
             {
@@ -115,6 +121,53 @@ namespace GrannyMP
                 case 3: HostTrap(); break;
             }
         }
+
+        // ================= a noise shows the survivor to the Granny player =================
+        const float RevealTime = 4f;
+        static bool _wasHearPlayer;
+        static readonly Dictionary<byte, float> _noiseSent = new();
+        /// <summary>Granny player: survivors to draw through the walls (red outline) and until when.</summary>
+        public static readonly Dictionary<byte, float> RevealUntil = new();
+
+        /// <summary>
+        /// Host: Granny heard something (a creaky floor, a falling item, the doorbell… – the game's own noise triggers set
+        /// grannyHearObject / grannyHearPlayer). Made by the client whose forwarded trigger has just run, otherwise by
+        /// the host's player.
+        /// </summary>
+        static void HostNoise() => HostNoiseBy(Time.unscaledTime - Events.LastForwardAt < 0.5f ? Events.LastForwardBy : Session.LocalId);
+
+        static void HostNoiseBy(byte who)
+        {
+            if (!Active || !Session.IsHost) return;
+            if (who == Session.GrannyId || !Session.Players.TryGetValue(who, out var p) || p.Ghost) return;
+            if (_noiseSent.TryGetValue(who, out var t) && Time.unscaledTime - t < 0.5f) return;
+            _noiseSent[who] = Time.unscaledTime;
+            Log.Debug($"PvP: {p.Name} made a noise – Granny sees them for {RevealTime:F0} s");
+            if (Session.GrannyId == Session.LocalId) { Reveal(who); return; }
+            var w = Session.W(Msg.Pvp); w.Byte(4); w.Byte(who); Session.SendTo(Session.GrannyId, w, true);
+        }
+
+        /// <summary>
+        /// Survivor on a client: the noise triggers its own game runs (an item it threw lands, a sound holder) set the
+        /// hearing flags on its copy of Granny – her AI is on the host, so the host is told who made the noise.
+        /// </summary>
+        static bool _clientHeard; static float _clientNoiseAt;
+        static void SurvivorNoiseTick()
+        {
+            if (!Active || !Session.IsClient || LocalIsGranny || (Session.Local?.Ghost ?? false)) return;
+            var g = GameRefs.Granny;
+            if (!U.Alive(g)) return;
+            bool heard;
+            try { heard = g.grannyHearObject || g.grannyHearPlayer; if (g.grannyHearObject) g.grannyHearObject = false; } catch { return; }
+            bool rise = heard && !_clientHeard; _clientHeard = heard;
+            if (!rise || Time.unscaledTime - _clientNoiseAt < 0.5f) return;
+            _clientNoiseAt = Time.unscaledTime;
+            var w = Session.W(Msg.Pvp); w.Byte(5); w.Byte(0); Session.SendToHost(w, true);
+        }
+
+        static string KeyText(KeyCode k, bool pl) => k == KeyCode.Mouse0 ? (pl ? "LPM" : "LMB") : k == KeyCode.Mouse1 ? (pl ? "PPM" : "RMB") : k == KeyCode.Mouse2 ? (pl ? "ŚPM" : "MMB") : k.ToString();
+
+        static void Reveal(byte who) => RevealUntil[who] = Time.unscaledTime + RevealTime;
 
         static void Request(byte kind, byte arg)
         {
@@ -142,7 +195,7 @@ namespace GrannyMP
 
         // knocked out (shotgun, crossbow, pepper, car, freeze trap): her own code lets her fall and get up. A flag that
         // stays on (seen: the Granny player could not move from the start of the day) must not hold the player forever.
-        const float MaxStun = 40f;
+        const float MaxStun = 150f;
         static float _stunSince; static bool _stunIgnored;
 
         static bool StunnedNow(EnemyAIGranny g)
@@ -219,6 +272,9 @@ namespace GrannyMP
                 if (g.grannyIsFollow) g.grannyIsFollow = false;
                 if (g.startAttack) g.startAttack = false;
                 if (g.GrannySearching) g.GrannySearching = false;
+                bool hearPlayer = g.grannyHearPlayer;
+                if (g.grannyHearObject || (hearPlayer && !_wasHearPlayer)) HostNoise();
+                _wasHearPlayer = hearPlayer;
                 if (g.grannyHearObject) g.grannyHearObject = false; // a noise – only her AI would go there and reset it
                 if (g.seePlayerTimer) g.seePlayerTimer = false;
             }
@@ -384,13 +440,33 @@ namespace GrannyMP
         static float _walkSave, _runSave, _nextIgnore, _nextStatus;
         // the start of every day: the game wakes the player up in the bed (black screen, the camera getting up). The
         // Granny player is moved to Granny only when that is over and they can walk.
-        static bool _woke; static float _controlSince, _respawnAt, _chaseSpeed, _appliedSpeed = -1;
+        static bool _woke, _titleSeen, _waitTitle; static float _controlSince, _respawnAt, _chaseSpeed, _appliedSpeed = -1, _dayStartAt, _titleTook = 10f;
+
+        /// <summary>The game's "Day N" title (startNewDay: the day's image and text) is on the screen.</summary>
+        static bool DayTitleShown()
+        {
+            var nd = GameRefs.NewDay;
+            if (!U.Alive(nd)) return false;
+            try
+            {
+                foreach (var go in new[] { nd.day1Text, nd.day2Text, nd.day3Text, nd.day4Text, nd.day5Text, nd.day5LastDayText, nd.day6Text })
+                    if (U.Alive(go) && go.activeInHierarchy) return true;
+                foreach (var im in new[] { nd.day1, nd.day2, nd.day3, nd.day4, nd.day5, nd.day5LastDay, nd.day6 })
+                    if (U.Alive(im) && im.enabled && im.gameObject.activeInHierarchy && im.color.a > 0.02f) return true;
+            }
+            catch { }
+            return false;
+        }
         static Light _nightLight;
         static readonly List<Behaviour> _hiddenUi = new(); static float _nextUiScan;
 
         /// <summary>The Granny player waits for the day to start (black screen with the countdown).</summary>
-        static bool Respawning => _respawnAt > 0 && Time.unscaledTime < _respawnAt;
-        public static bool BlackScreen => LocalGrannyInGame && Session.HostInGame && !GameFlow.InTransition && (Respawning || !_woke);
+        static bool Respawning => _respawnAt > 0 ? Time.unscaledTime < _respawnAt : WaitingDayTitle;
+        /// <summary>The day has started, the countdown has not: the game still shows "Day N" (it starts once that is gone).</summary>
+        public static bool WaitingDayTitle => _respawnAt == 0 && Session.HostInGame && !GameFlow.InTransition && !GameFlow.StartHolding;
+        public static bool BlackScreen => LocalGrannyInGame && Session.HostInGame && !GameFlow.InTransition && (Respawning || !_woke || KnockedOut);
+        /// <summary>The Granny player's Granny is knocked out (shot, sprayed, hit by the car): a black screen until she gets up.</summary>
+        public static bool KnockedOut => LocalGrannyInGame && _stunned && LocalFrozen;
         public static int RespawnSeconds => Mathf.Max(0, Mathf.CeilToInt(_respawnAt - Time.unscaledTime));
         /// <summary>Top-right icon of the Granny player: the bear trap and how long until the next one.</summary>
         public static bool ShowTrapIcon => LocalGrannyInGame && !BlackScreen;
@@ -408,6 +484,58 @@ namespace GrannyMP
                 else if (_taken && U.Alive(g)) Release(g);
             }
             if (LocalIsGranny) LocalUpdate(); else RestoreLocal();
+            NpcDoorsTick();
+            SurvivorNoiseTick();
+        }
+
+        // ================= doors only Granny's AI passes (the dining room's door to the backyard) =================
+        // Such a door is locked for the player for good (tag innerdoorLocked: openDoors only plays its "locked" shake);
+        // Granny's AI does not open it, the door lets her walk through (OpenCloseDoorVind.OnTriggerEnter ignores her
+        // collision). The Granny player walks with the player's controller – the door looks unlocked to them (the tag
+        // is changed on their machine only), so it opens and closes like any other door; once it is shut again, every
+        // machine locks it again – the survivors still cannot use it.
+        const string LockedTag = "innerdoorLocked", ClosedTag = "innerdoorClosed";
+        static List<OpenCloseDoorVind> _npcDoors; static float _nextDoorScan; static OpenCloseDoorVind _lookDoor;
+
+        static void NpcDoorsTick()
+        {
+            if (!Mode || !GameRefs.InGameScene) return;
+            if (_npcDoors == null)
+            {
+                if (Time.unscaledTime < _nextDoorScan) return;
+                _nextDoorScan = Time.unscaledTime + 5f;
+                _npcDoors = new List<OpenCloseDoorVind>();
+                try
+                {
+                    foreach (var o in UnityEngine.Object.FindObjectsOfType(Il2CppInterop.Runtime.Il2CppType.Of<OpenCloseDoorVind>(), true))
+                    {
+                        var d = o.TryCast<OpenCloseDoorVind>();
+                        if (d != null && d.gameObject.tag == LockedTag) _npcDoors.Add(d);
+                    }
+                    Log.Debug($"PvP: {_npcDoors.Count} door(s) only Granny can open: {string.Join(", ", _npcDoors.Select(d => d.name))}");
+                }
+                catch (Exception e) { Log.Debug("PvP doors: " + e.Message); }
+            }
+            foreach (var d in _npcDoors)
+            {
+                if (!U.Alive(d)) continue;
+                try
+                {
+                    var go = d.gameObject; string tag = go.tag;
+                    bool shut = !d.DoorOpen && !d.DoorMoving;
+                    bool grannyAtIt = LocalGrannyInGame && d == _lookDoor;
+                    if (grannyAtIt && shut && tag == LockedTag) SetTagHere(go, ClosedTag);       // Granny: it opens
+                    else if (!grannyAtIt && shut && tag != LockedTag) SetTagHere(go, LockedTag); // shut again: locked
+                }
+                catch { }
+            }
+            _lookDoor = null;
+        }
+
+        static void SetTagHere(GameObject go, string tag)
+        {
+            TagSync.Applying = true; // this machine only
+            try { go.tag = tag; } finally { TagSync.Applying = false; }
         }
 
         static void LocalUpdate()
@@ -417,6 +545,7 @@ namespace GrannyMP
             FindBodyParts(g);
             if (!Cfg.PvpOwnBody.Value) HideLocalGranny(g);
             IgnoreGrannyColliders(g);
+            NavGuard(root);
             ApplySpeed();
             NightVision();
             NoOwnLights();
@@ -448,10 +577,10 @@ namespace GrannyMP
             }
             else _farSince = 0;
             if (!InputFree() || LocalFrozen || BlackScreen || GameFlow.InTransition) return;
-            if (In.MouseDown(0) && now >= _localNextGrab) { _localNextGrab = now + GrabCooldown; Request(1, FindTarget()); }
-            // RMB: one of her lines or her laugh
-            else if (In.MouseDown(1) && now >= _localNextVoice) { _localNextVoice = now + VoiceCooldown; Request(2, (byte)(_rng.Next(4) == 0 ? 1 : 0)); }
-            else if (In.KeyDown(Cfg.PvpTrapKey.Value))
+            if (In.Pressed(Cfg.PvpGrabKey.Value) && now >= _localNextGrab) { _localNextGrab = now + GrabCooldown; Request(1, FindTarget()); }
+            // one of her lines or her laugh
+            else if (In.Pressed(Cfg.PvpVoiceKey.Value) && now >= _localNextVoice) { _localNextVoice = now + VoiceCooldown; Request(2, (byte)(_rng.Next(4) == 0 ? 1 : 0)); }
+            else if (In.Pressed(Cfg.PvpTrapKey.Value))
             {
                 if (now < _localNextTrap) Session.Notify(L.T($"The next trap in {Mathf.CeilToInt(_localNextTrap - now)} s.", $"Następna pułapka za {Mathf.CeilToInt(_localNextTrap - now)} s."), false);
                 else { _localNextTrap = now + TrapCooldown; Request(3, 0); }
@@ -475,10 +604,33 @@ namespace GrannyMP
         /// <summary>Woken up: in control for 1.5 s and walked (or 6 s in control) since the day started.</summary>
         static void UpdateWake(float now)
         {
-            if (GameFlow.InTransition) { _woke = false; _controlSince = 0; _respawnAt = 0; return; }
+            if (GameFlow.InTransition) { _woke = false; _controlSince = 0; _respawnAt = 0; _dayStartAt = 0; _titleSeen = false; _waitTitle = false; return; }
             if (GameFlow.StartHolding) { _controlSince = 0; return; } // everybody is still loading
-            // the day started: the countdown runs from now (also while the game still wakes the player up)
-            if (_respawnAt == 0 && Session.HostInGame) { _respawnAt = now + RespawnDelay; Log.Info($"PvP: Granny comes back in {RespawnDelay:F0} s"); }
+            // the day started: the countdown starts halfway through the game's start of the day (its "Day N" title) –
+            // half of how long that took the last time (10 s before the first one was measured)
+            if (_respawnAt == 0 && Session.HostInGame)
+            {
+                if (_dayStartAt == 0) _dayStartAt = now;
+                bool title = DayTitleShown();
+                if (title) _titleSeen = true;
+                bool over = !title && (_titleSeen || now - _dayStartAt > 15f);
+                if (over && _titleSeen) _titleTook = now - _dayStartAt;
+                // + 3 s: the wait itself is half of the start of the day and 3 more seconds
+                float wait = _titleTook * 0.5f + 3f;
+                if (now - _dayStartAt >= wait || now - _dayStartAt > 25f)
+                {
+                    _respawnAt = now + RespawnDelay;
+                    _waitTitle = true; // the title is still measured for the next day
+                    Log.Info($"PvP: the start of the day ({now - _dayStartAt:F1} s) – Granny comes back in {RespawnDelay:F0} s");
+                }
+            }
+            else if (_waitTitle && Session.HostInGame)
+            {
+                bool title = DayTitleShown();
+                if (title) _titleSeen = true;
+                else if (_titleSeen) { _titleTook = Mathf.Clamp(now - _dayStartAt, 2f, 25f); _waitTitle = false; }
+                else if (now - _dayStartAt > 25f) _waitTitle = false;
+            }
             if (_woke) return;
             if (!HasControl()) { _controlSince = 0; return; }
             if (_controlSince == 0) _controlSince = now;
@@ -702,7 +854,7 @@ namespace GrannyMP
             try
             {
                 if (f.Pointer != _speedFps) { _speedFps = f.Pointer; _walkSave = f.m_WalkSpeed; _runSave = f.m_RunSpeed; _appliedSpeed = -1; _loggedSpeed = -1; }
-                float chase = Session.IsHost ? HostChaseSpeed() : _chaseSpeed, k = Cfg.PvpGrannySpeed.Value;
+                float chase = Session.IsHost ? HostChaseSpeed() : _chaseSpeed, k = Session.GrannySpeedNow;
                 float walk = chase > 0.5f ? chase * k : _walkSave * k, run = chase > 0.5f ? chase * k : _runSave * k;
                 if (Mathf.Abs(walk - _loggedSpeed) > 0.01f)
                 {
@@ -736,7 +888,11 @@ namespace GrannyMP
                     {
                         if (mb == null) continue;
                         var tn = U.Il2CppTypeName(mb);
-                        if (GrannyDoors.Contains(tn)) return true;
+                        if (GrannyDoors.Contains(tn))
+                        {
+                            if (tn == "OpenCloseDoorVind") _lookDoor = mb.TryCast<OpenCloseDoorVind>(); // a door only her AI passes? (NpcDoorsTick)
+                            return true;
+                        }
                         if (tn.StartsWith("OpenClose", StringComparison.OrdinalIgnoreCase) || tn.StartsWith("openClose", StringComparison.Ordinal)) return false;
                     }
                 // a lever, a switch, a lock… (no door script above it): openDoors only acts on tagged objects, which are
@@ -756,6 +912,39 @@ namespace GrannyMP
         };
 
         /// <summary>The flashlight and the lantern on their tables are not there for Granny (only on her screen).</summary>
+        // ================= Granny stays where Granny can walk =================
+        // Granny's AI walks on the navigation mesh only – never into the hole under the spider-key hatch or the water
+        // outside. The Granny player walks with the player's controller and could fall in: once their feet are off the
+        // navigation mesh and have dropped below the last good spot, they are put back there.
+        static Vector3 _navPos; static float _navFeetY, _nextNav; static bool _hasNav;
+
+        static void NavGuard(Transform root)
+        {
+            if (BlackScreen || GameFlow.InTransition || !_woke) { _hasNav = false; return; }
+            float now = Time.unscaledTime;
+            if (now < _nextNav) return;
+            _nextNav = now + 0.05f;
+            try
+            {
+                var cc = GameRefs.PlayerCC;
+                var feet = root.position + Vector3.up * LocalFeetOffset();
+                bool onNav = NavMesh.SamplePosition(feet, out var hit, 0.7f, NavMesh.AllAreas) && Mathf.Abs(hit.position.y - feet.y) < 0.45f;
+                if (onNav)
+                {
+                    if (U.Alive(cc) && cc.isGrounded) { _navPos = root.position; _navFeetY = feet.y; _hasNav = true; }
+                    return;
+                }
+                if (!_hasNav || feet.y > _navFeetY - 0.8f) return;
+                bool wasOn = U.Alive(cc) && cc.enabled;
+                if (wasOn) cc.enabled = false;
+                root.position = _navPos;
+                if (wasOn) cc.enabled = true;
+                try { var f = GameRefs.Fps; if (U.Alive(f)) { f.timeInAir = 0f; f.fallTimerStarted = false; } } catch { }
+                Log.Info($"PvP: Granny fell off where she can walk ({feet.y - _navFeetY:F1} m) – put back");
+            }
+            catch (Exception e) { Log.Debug("PvP nav guard: " + e.Message); _nextNav = now + 2f; }
+        }
+
         static void HideTableLights()
         {
             var nd = GameRefs.NewDay;
@@ -864,8 +1053,8 @@ namespace GrannyMP
             {
                 if (!LocalGrannyInGame || BlackScreen) return null;
                 if (_stunned && LocalFrozen) return L.T("Granny is knocked out – wait until she gets up...", "Granny jest ogłuszona – poczekaj, aż wstanie...");
-                return L.T($"You are GRANNY · LMB: grab · RMB: talk / laugh · {Cfg.PvpTrapKey.Value}: bear trap",
-                           $"Grasz jako GRANNY · LPM: złap · PPM: mów / śmiej się · {Cfg.PvpTrapKey.Value}: pułapka");
+                return L.T($"You are GRANNY · {KeyText(Cfg.PvpGrabKey.Value, false)}: grab · {KeyText(Cfg.PvpVoiceKey.Value, false)}: talk / laugh · {KeyText(Cfg.PvpTrapKey.Value, false)}: bear trap",
+                           $"Grasz jako GRANNY · {KeyText(Cfg.PvpGrabKey.Value, true)}: złap · {KeyText(Cfg.PvpVoiceKey.Value, true)}: mów / śmiej się · {KeyText(Cfg.PvpTrapKey.Value, true)}: pułapka");
             }
         }
     }

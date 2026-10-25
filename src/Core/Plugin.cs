@@ -12,9 +12,9 @@ namespace GrannyMP
     {
         public const string Guid = "pl.grannymp.coop";
         public const string ModName = "Granny Multiplayer Co-op";
-        public const string ModVersion = "1.23.1";
+        public const string ModVersion = "0.9.0";
         /// <summary>Protocol version – host and clients must match.</summary>
-        public const int ProtocolVersion = 29;
+        public const int ProtocolVersion = 36;
 
         public static Plugin Instance;
         public static Harmony HarmonyInstance;

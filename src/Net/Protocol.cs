@@ -59,6 +59,8 @@ namespace GrannyMP
         DayCount = 58,      // H->*  the current day number (sent regularly between days)
         GrannyVoice = 59,   // H->*  Granny says a line / laughs (GrannySounds)
         Voice = 60,         // *     proximity voice chat (Steam voice, compressed)
+        Notice = 69,        // H->*  one of the game's notices about Granny was shown (NoticeSync)
+        GrannyEyes = 68,    // H->*  Granny's eyes: closed (EyesLock) and their colour (red while hunting)
         FuelFill = 67,      // *     the fuel bar's level (FuelSync) – C->H, H->*
         Escape = 66,        // *     an escape cutscene started (EscapeSync) – C->H, H->*
         TrapState = 65,     // *     a freeze trap armed / closed (FreezeTrapSync) – C->H, H->*

@@ -5,12 +5,27 @@ using UnityEngine.UI;
 namespace GrannyMP
 {
     /// <summary>
-    /// Main menu: "Multiplayer" under the game's GRANNY logo (MenuButtonsHolder/GrannyText). A uGUI text next to the
-    /// logo (same parent), sized from the logo's corners on the screen; the font is taken from the menu's own texts.
+    /// Main menu: "Multiplayer" under the game's GRANNY logo (MenuButtonsHolder/GrannyText) – the picture next to the mod
+    /// (multiplayer-logo.png), otherwise a uGUI text in the menu's own font. It sits next to the logo (same parent),
+    /// sized from the logo's corners on the screen.
     /// </summary>
     internal static class MenuBrand
     {
         static GameObject _label; static float _next;
+        static Texture2D _logo; static bool _logoTried;
+
+        static Texture2D Logo()
+        {
+            if (_logoTried) return _logo;
+            _logoTried = true;
+            try
+            {
+                _logo = Png.Asset("multiplayer-logo.png");
+                if (_logo != null) { _logo.hideFlags = HideFlags.HideAndDontSave; UnityEngine.Object.DontDestroyOnLoad(_logo); }
+            }
+            catch (Exception e) { Log.Debug("menu logo: " + e.Message); }
+            return _logo;
+        }
 
         public static void Update()
         {
@@ -25,7 +40,7 @@ namespace GrannyMP
                 var parent = logo.transform.parent;
                 if (lrt == null || parent == null) return;
                 var font = MenuFont(parent);
-                if (font == null) { _next = Time.unscaledTime + 5f; return; }
+                if (font == null && Logo() == null) { _next = Time.unscaledTime + 5f; return; }
                 // the logo's rect is 100 x 100 and scaled – its corners show its real size on the screen
                 var wc = new Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppStructArray<Vector3>(4);
                 lrt.GetWorldCorners(wc);
@@ -56,6 +71,19 @@ namespace GrannyMP
                 rt.sizeDelta = new Vector2(lw * 0.4f, lh * 0.14f);
                 rt.localScale = Vector3.one; rt.localRotation = Quaternion.identity;
                 rt.localPosition = new Vector3((tl.x + tr.x) * 0.5f, bl.y + lh * 0.08f, 0f);
+                var tex = Logo();
+                if (tex != null)
+                {
+                    float pw = lw * 0.32f, ph = pw * tex.height / Mathf.Max(1f, tex.width);
+                    rt.sizeDelta = new Vector2(pw, ph);
+                    rt.localPosition = new Vector3((tl.x + tr.x) * 0.5f, bl.y + lh * 0.23f, 0f);
+                    var raw = go.AddComponent<RawImage>();
+                    raw.texture = tex;
+                    raw.raycastTarget = false;
+                    Log.Debug($"menu: the Multiplayer picture under the GRANNY logo ({pw:F0}x{ph:F0}, logo {lw:F0}x{lh:F0})");
+                    _label = go;
+                    return;
+                }
                 var text = go.AddComponent<Text>();
                 text.font = font;
                 text.text = "Multiplayer";
