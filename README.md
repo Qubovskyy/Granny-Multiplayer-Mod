@@ -10,7 +10,7 @@ validates them and tells everybody. English by default, Polish in the settings. 
 
 ## Installation
 
-Every player needs the same Steam version of Granny, **BepInEx 6 IL2CPP (be.785)** and `GrannyMP.dll` in
+Every player needs the same Steam version of Granny, **BepInEx 6 IL2CPP (be.785) [(Download BepInEx here)](https://builds.bepinex.dev/projects/bepinex_be/785/BepInEx-Unity.IL2CPP-win-x64-6.0.0-be.785%2B6abdba4.zip)** and `GrannyMP.dll` in
 `BepInEx\plugins\GrannyMP\` – it is a single file (the mod's pictures are built in). Character models (`.gmdl`) go to
 `BepInEx\plugins\GrannyMP\models\`. The first start creates `BepInEx\config\pl.grannymp.coop.cfg`.
 
