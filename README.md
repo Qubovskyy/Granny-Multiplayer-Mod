@@ -1,16 +1,35 @@
 # Granny MP – multiplayer mod (BepInEx 6 IL2CPP)
 
-Mod version: **0.9.0 (beta)** (protocol 36) · Game: Granny (Steam, Unity 6000.0.58, IL2CPP) · BepInEx 6.0.0-be.785
+> [!NOTE]
+> **Disclaimer:** this mod was made with the help of **Claude Opus 5.5** – in reverse engineering
+> the game, writing the code and the Model Tool. Granny is a game by DVloper; this is an unofficial fan mod, not connected
+> with or endorsed by DVloper.
+
+Mod version: **0.9.0 (beta)** · Game: Granny (Steam, Unity 6000.0.58, IL2CPP) · BepInEx 6.0.0-be.785
 
 Online co-op and PvP for Granny, up to 8 players (9 via config). The host is authoritative: only the host runs the AI
 (Granny, spiders, crow, rats), the item placement and the world logic; clients send their movement and actions, the host
 validates them and tells everybody. English by default, Polish in the settings. Discord: https://discord.gg/MrKK6KwMVv
 
+![Main menu](screenshots/screenshot-1.jpg)
+
+| | |
+|---|---|
+| ![Lobby](screenshots/screenshot-2.jpg) | ![Lobby with a player](screenshots/screenshot-4.jpg) |
+| ![Settings](screenshots/screenshot-3.jpg) | ![Another player](screenshots/screenshot-5.jpg) |
+| ![Crouching player](screenshots/screenshot-6.jpg) | ![Granny chasing](screenshots/screenshot-7.jpg) |
+
 ---
 
 ## Installation
 
-Every player needs the same Steam version of Granny, **BepInEx 6 IL2CPP (be.785) [(Download BepInEx here)](https://builds.bepinex.dev/projects/bepinex_be/785/BepInEx-Unity.IL2CPP-win-x64-6.0.0-be.785%2B6abdba4.zip)** and `GrannyMP.dll` in
+Every player needs the same Steam version of Granny and the same mod version.
+
+**Easiest:** download `GrannyMP-v0.9.0-beta-BepInEx.zip` from the Releases page and unpack it into the game folder (next to
+`Granny.exe`) – it has BepInEx, the mod and the character models. The first start takes a while (BepInEx prepares itself).
+The Model Tool is a separate download (`GrannyModelTool-v1.1.0.zip`).
+
+**Manually:** install **BepInEx 6 IL2CPP (be.785) [(Download BepInEx here)](https://builds.bepinex.dev/projects/bepinex_be/785/BepInEx-Unity.IL2CPP-win-x64-6.0.0-be.785%2B6abdba4.zip)** and `GrannyMP.dll` in
 `BepInEx\plugins\GrannyMP\` – it is a single file (the mod's pictures are built in). Character models (`.gmdl`) go to
 `BepInEx\plugins\GrannyMP\models\`. The first start creates `BepInEx\config\pl.grannymp.coop.cfg`.
 
